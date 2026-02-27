@@ -55,9 +55,12 @@ defaultproperties
      PassengerWeapons(1)=(WeaponPawnClass=Class'CSKraken.KrakenLaserGunPawn')
      PassengerWeapons(2)=(WeaponPawnClass=Class'CSKraken.KrakenBeamGunPawn')
      PassengerWeapons(3)=(WeaponPawnClass=Class'CSKraken.KrakenFlakGunPawn')
-     RedSkin=Texture'DevilsArsenal_Tex.Kraken.KrakenRed'
-     BlueSkin=Texture'DevilsArsenal_Tex.Kraken.KrakenBlue'
-     Begin Object Class=SVehicleWheel Name=RightRearTIRe
+     
+	 // The Kraken has its own texture.
+	 RedSkin=Texture'SieEng_TexExtra.Kraken.KrakenRED'
+     BlueSkin=Texture'SieEng_TexExtra.Kraken.KrakenBLUE'
+     
+	 Begin Object Class=SVehicleWheel Name=RightRearTIRe
          bPoweredWheel=True
          bHandbrakeWheel=True
          SteerType=VST_Inverted

@@ -460,7 +460,7 @@ Begin:
 
 defaultproperties
 {
-     Damage=70.000000
+     Damage=85.000000 // Was 70 - Tiamat-specific stats in KrakenMissileGun.uc
      DamageRadius=800.000000
      MomentumTransfer=1000000.000000
      MyDamageType=Class'CSKraken.Kraken_Missile'
@@ -487,7 +487,7 @@ defaultproperties
      bSpecialHUD=True
      bNoTeamBeacon=True
      bCanUse=False
-     AirSpeed=1000.000000
+     AirSpeed=2000.000000 // Was 1000 - Tiamat-specific stats in KrakenMissileGun.uc
      AccelRate=2000.000000
      BaseEyeHeight=0.000000
      EyeHeight=0.000000

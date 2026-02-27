@@ -84,34 +84,43 @@ state ProjectileFireMode
 	   	local KrakenGuidedWarhead M;
 	    local PlayerController Possessor;
 		local rotator MissileRot;
+		local ONSWeaponPawn WeaponPawn;
 		
         MissileRot=C.Rotation;
         M = Spawn(Class'KrakenGuidedWarhead',Self,,Location+Vect(0,0,256),MissileRot);
 
 		if (M != None)
 		{
+			// Check if we are attached to a SmallKraken (Tiamat) to change stats
+			WeaponPawn = ONSWeaponPawn(Owner);
+			if (WeaponPawn != None && WeaponPawn.VehicleBase != None)
+			{
+				if (WeaponPawn.VehicleBase.IsA('SmallKraken'))
+				{
+					M.Damage = 75.0; // Was 70
+					M.AirSpeed = 1400.0; // Was 1000
+				}
+			}
 
-		M.OldPawn = Instigator;
-		//M.PlaySound(FireSound);
-		Possessor = PlayerController(Instigator.Controller);
-		Possessor.bAltFire = 0;
-		if ( Possessor != None )
-		{
-			if ( Instigator.InCurrentCombo() )
-				Possessor.Adrenaline = 0;
-			Possessor.UnPossess();
-			Instigator.SetOwner(Possessor);
-			Instigator.PlayerReplicationInfo = Possessor.PlayerReplicationInfo;
-			Possessor.Possess(M);
+			M.OldPawn = Instigator;
+			Possessor = PlayerController(Instigator.Controller);
+			Possessor.bAltFire = 0;
+			
+			if ( Possessor != None )
+			{
+				if ( Instigator.InCurrentCombo() )
+					Possessor.Adrenaline = 0;
+				Possessor.UnPossess();
+				Instigator.SetOwner(Possessor);
+				Instigator.PlayerReplicationInfo = Possessor.PlayerReplicationInfo;
+				Possessor.Possess(M);
+			}
+			
+			// Initialize velocity using the potentially modified AirSpeed
+			M.Velocity = M.AirSpeed * Vector(M.Rotation);
+			M.Acceleration = M.Velocity;
+			M.MyTeam = Possessor.PlayerReplicationInfo.Team;
 		}
-		M.Velocity = M.AirSpeed * Vector(M.Rotation);
-		M.Acceleration = M.Velocity;
-		M.MyTeam = Possessor.PlayerReplicationInfo.Team;
-
-
-
-		}
-
 	}
 }
 
