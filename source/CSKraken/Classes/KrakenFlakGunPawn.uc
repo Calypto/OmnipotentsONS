@@ -3,9 +3,9 @@
 //-----------------------------------------------------------
 class KrakenFlakGunPawn extends ONSWeaponPawn;
 
-function KDriverEnter(Pawn P)
+simulated function ClientKDriverEnter(PlayerController PC)
 {
-	Super.KDriverEnter(P);
+	Super.ClientKDriverEnter(PC);
 
 	if (VehicleBase != None)
 	{
