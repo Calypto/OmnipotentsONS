@@ -728,7 +728,8 @@ defaultproperties
      MakeLinkForce="LinkActivated"
      Damage=12  //link gun shaft is 9, Scorp is 12, Hvy LinkTank 17  This is its primary close in weapon.
      Momentum=-13000
-     LinkFlexibility=1.20000
+     //LinkFlexibility=1.20000
+     LinkFlexibility=0.60000
      bInitAimError=True
      LinkVolume=240
      BeamSounds(0)=Sound'WeaponSounds.LinkGun.BLinkGunBeam1'
