@@ -98,7 +98,7 @@ state ProjectileFireMode
 				if (WeaponPawn.VehicleBase.IsA('SmallKraken'))
 				{
 					M.Damage = 75.0; // Was 70
-					M.AirSpeed = 1400.0; // Was 1000
+					M.AirSpeed = 1200.0; // Was 1000
 				}
 			}
 

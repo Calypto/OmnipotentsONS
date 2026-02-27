@@ -487,7 +487,7 @@ defaultproperties
      bSpecialHUD=True
      bNoTeamBeacon=True
      bCanUse=False
-     AirSpeed=2000.000000 // Was 1000 - Tiamat-specific stats in KrakenMissileGun.uc
+     AirSpeed=1300.000000 // Was 1000 - Tiamat-specific stats in KrakenMissileGun.uc
      AccelRate=2000.000000
      BaseEyeHeight=0.000000
      EyeHeight=0.000000
