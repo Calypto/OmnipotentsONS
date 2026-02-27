@@ -11,18 +11,6 @@ function KDriverEnter(Pawn P)
 	}
 }
 
-simulated function PostBeginPlay()
-{
-	Super.PostBeginPlay();
-
-	// Dynamically set our strings based on the parent vehicle's name
-	if (VehicleBase != None)
-	{
-		VehicleNameString = VehicleBase.VehicleNameString $ " Laser Turret";
-		VehiclePositionString = "in a " $ VehicleBase.VehicleNameString $ " turret";
-	}
-}
-
 function AltFire(optional float F)
 {
 	local PlayerController PC;
