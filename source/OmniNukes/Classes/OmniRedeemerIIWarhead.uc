@@ -548,7 +548,10 @@ ignores Trigger, Bump, HitWall, HeadVolumeChange, PhysicsVolumeChange, Falling, 
     }
 
 Begin:
-	Instigator = self;
+	//Instigator = self;
+    if ( Instigator == None && SavedInstigatorController != None )
+        Instigator = SavedInstigatorController.Pawn;
+
     DmgRadius(vect(10000,11000,12000), 0, 0.9, Damage*0.01, DamageRadius, class'OmniNukes.DamTypeOmniNukeFlash', MomentumTransfer*0, Location);
 
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKBoom',SLOT_None,5*TransientSoundVolume);
