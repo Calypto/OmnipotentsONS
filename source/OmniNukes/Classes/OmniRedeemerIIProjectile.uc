@@ -102,7 +102,7 @@ simulated function HitWall(vector HitNormal, actor Wall)
 function TakeDamage( int Damage, Pawn instigatedBy, Vector hitlocation,
 							Vector momentum, class<DamageType> damageType)
 {
-//	local controller c;
+	local controller c;
 
 	if ( (Damage > 0) && ((InstigatedBy == None) || (InstigatedBy.Controller == None) || (Instigator == None) || (Instigator.Controller == None) || !InstigatedBy.Controller.SameTeamAs(Instigator.Controller)) )
 	{
@@ -118,19 +118,15 @@ function TakeDamage( int Damage, Pawn instigatedBy, Vector hitlocation,
 //		    HurtRadius(100, 400, MyDamageType, MomentumTransfer, Location);
 		    HurtRadius(Damage, DamageRadius*0.125, MyDamageType, MomentumTransfer, Location);
 
-/*
 		    for ( c = Level.ControllerList; c!=None; c=c.nextController )
             {
                 if(playercontroller(c)!=none && c.PlayerReplicationInfo.team!=instigator.PlayerReplicationInfo.Team)
                     playercontroller(c).ReceiveLocalizedMessage(class'OmniNukes.OmniNukeUnWarnMsg');
             }
-*/
 
 		    Destroy();
 		}
 	}
-
-
 }
 
 simulated event FellOutOfWorld(eKillZType KillType)
@@ -391,6 +387,7 @@ defaultproperties
      AmbientSound=Sound'OmniNukesSounds.OmniNukes.tfWarheadAmb'
      LifeSpan=20.000000
      DrawScale=0.500000
+     Skins(0)=Texture'OmniNukes_Tex.OBFDeemer.OBFRmissle'
      AmbientGlow=96
      bUnlit=False
      SoundVolume=255

@@ -664,6 +664,7 @@ defaultproperties
      NetPriority=3.000000
      AmbientSound=Sound'OmniNukesSounds.OmniNukes.tfWarheadAmb'
      DrawScale=0.500000
+     Skins(0)=Texture'OmniNukes_Tex.OBFDeemer.OBFRmissle'
      AmbientGlow=96
      bGameRelevant=True
      SoundRadius=100.000000

@@ -42,5 +42,7 @@ defaultproperties
      Mesh=SkeletalMesh'Weapons.Redeemer_3rd'
      RelativeLocation=(X=-35.000000)
      RelativeRotation=(Yaw=49152,Roll=32768)
-     DrawScale=0.800000
+     DrawScale=0.900000
+     Skins(0)=Texture'OmniNukes_Tex.OBFDeemer.OBFRmissle'
+     Skins(1)=Texture'OmniNukes_Tex.OBFDeemer.OBFRedeemerTex0'
 }
