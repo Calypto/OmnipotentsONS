@@ -141,8 +141,14 @@ function BlowUp(vector HitLocation)
 	local int i;
 	local OmniNukeMShroomcloud cloud;
 
-	if ( Role == ROLE_Authority )
-	{
+    if ( Role == ROLE_Authority )
+    {
+        if ( InstigatorController != None )
+            SavedIC = InstigatorController;
+        else if ( Instigator != None )
+            SavedIC = Instigator.Controller;
+        if ( Instigator != None )
+            Team = Instigator.GetTeamNum();
 	    bHidden=true;
 
         Spawn(class'OmniNukes.OmniNukeNukeFlash',,, Location, Rotation);
@@ -305,7 +311,10 @@ state Dying
     }
 
 Begin:
-    DmgRadius(vect(10000,11000,12000), 0, 0.9, Damage*0.01, DamageRadius, class'OmniNukes.DamTypeOmniNukeFlash', MomentumTransfer*0, Location);
+    if ( Instigator == None && SavedIC != None )
+        Instigator = SavedIC.Pawn;
+
+	DmgRadius(vect(10000,11000,12000), 0, 0.9, Damage*0.01, DamageRadius, class'OmniNukes.DamTypeOmniNukeFlash', MomentumTransfer*0, Location);
 
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKBoom',SLOT_None,5*TransientSoundVolume);
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKRing',SLOT_None,1.0*TransientSoundVolume,false,TransientSoundRadius*1.5,0.3+frand()*0.7);
