@@ -20,6 +20,7 @@ var() float  ShakeOffsetTime;       // how much time to offset view
 var class<Emitter> ExplosionEffectClass;
 
 var byte Team;
+var Controller SavedIC;
 
 replication
 {
@@ -36,11 +37,14 @@ simulated function Destroyed()
 
 function BeginPlay()
 {
-	Super.BeginPlay();
+    Super.BeginPlay();
 
-	if (Instigator != None)
-		Team = Instigator.GetTeamNum();
-	SetTimer(0.5, true);
+    if (Instigator != None)
+    {
+        Team = Instigator.GetTeamNum();
+        SavedIC = Instigator.Controller;
+    }
+    SetTimer(0.5, true);
 }
 
 simulated function PostBeginPlay()
@@ -98,10 +102,9 @@ simulated function HitWall(vector HitNormal, actor Wall)
 function TakeDamage( int Damage, Pawn instigatedBy, Vector hitlocation,
 							Vector momentum, class<DamageType> damageType)
 {
-	local controller c;
+//	local controller c;
 
-   if ( (Damage > 0) && ((InstigatedBy == None) || (InstigatedBy.Controller == None) || (Instigator == None) || (Instigator.Controller == None) || !InstigatedBy.Controller.SameTeamAs(Instigator.Controller)) )
-
+	if ( (Damage > 0) && ((InstigatedBy == None) || (InstigatedBy.Controller == None) || (Instigator == None) || (Instigator.Controller == None) || !InstigatedBy.Controller.SameTeamAs(Instigator.Controller)) )
 	{
 		if ( DamageType.Default.bVehicleHit || (DamageType == class'Crushed') )
 			BlowUp(Location);
@@ -169,42 +172,65 @@ function BlowUp(vector HitLocation)
 
 simulated function DmgRadius(vector flash, float dmgPctHard, float dmgPctThru, float DamageAmount, float DamageRadius, class<DamageType> DamageType, float Momentum, vector HitLocation )
 {
-	local actor Victims;
-	local float damageScale, dist;
-	local vector dir;
+    local actor Victims;
+    local float damageScale, dist;
+    local vector dir;
+	local Pawn DmgInstigator;
 
-	if ( bHurtEntry )
-		return;
+    if ( bHurtEntry )
+        return;
+
+    if ( Instigator != None )
+        DmgInstigator = Instigator;
+    else if ( SavedIC != None )
+        DmgInstigator = SavedIC.Pawn;
+
+/*
+    Log("DmgRadius: Team=" $ Team);
+    if ( SavedIC != None )
+        Log("DmgRadius: SavedIC=" $ SavedIC $ " TeamNum=" $ SavedIC.GetTeamNum());
+    else
+        Log("DmgRadius: SavedIC=None");
+    if ( Instigator != None )
+        Log("DmgRadius: Instigator=" $ Instigator $ " TeamNum=" $ Instigator.GetTeamNum());
+    else
+        Log("DmgRadius: Instigator=None");
+*/
 
     bHurtEntry = true;
-	foreach CollidingActors( class 'Actor', Victims, DamageRadius, HitLocation )
-	{
-		// don't let blast damage affect fluid - VisibleCollisingActors doesn't really work for them - jag
-		if( (Victims != self) && (Hurtwall != Victims) && (Victims.Role == ROLE_Authority) && !Victims.IsA('FluidSurfaceInfo') )
-		{
-			dir = Victims.Location - HitLocation;
-			dist = FMax(1,VSize(dir));
-			dir = dir/dist;
-			damageScale = 1 - FMax(0,(dist - Victims.CollisionRadius)/DamageRadius);
+    foreach CollidingActors( class 'Actor', Victims, DamageRadius, HitLocation )
+    {
+        if( (Victims != self) && (Hurtwall != Victims) && (Victims.Role == ROLE_Authority) && !Victims.IsA('FluidSurfaceInfo') )
+        {
+            if ( Team == 255 || Pawn(Victims) == None ||
+                 Pawn(Victims).GetTeamNum() != Team )
+            {
+                dir = Victims.Location - HitLocation;
+                dist = FMax(1,VSize(dir));
+                dir = dir/dist;
+                damageScale = 1 - FMax(0,(dist - Victims.CollisionRadius)/DamageRadius);
 
-      if (!fasttrace(Victims.Location, hitlocation)) damagescale*=dmgPctThru;
+                if (!fasttrace(Victims.Location, hitlocation)) damagescale*=dmgPctThru;
 
-      if (InstigatorController!=None) 	Victims.SetDelayedDamageInstigatorController( InstigatorController );
+                if (SavedIC != None)
+                    Victims.SetDelayedDamageInstigatorController( SavedIC );
 
-      if (pawn(victims)==none)  damagescale*=dmgPctHard;
+                if (pawn(victims)==none) damagescale*=dmgPctHard;
 
-      Victims.TakeDamage(damageScale * DamageAmount,Instigator,	Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * dir,(damageScale * Momentum * dir),DamageType);
-			
-			if(pawn(victims)!=none && pawn(victims).controller!=none && playercontroller(pawn(victims).controller)!=none && flash!=vect(0,0,0))
-         playercontroller(pawn(victims).controller).clientflash(1-damagescale, flash);
+                Victims.TakeDamage(damageScale * DamageAmount, DmgInstigator,
+                    Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * dir,
+                    (damageScale * Momentum * dir), DamageType);
 
-      if (Vehicle(Victims) != None && Vehicle(Victims).Health > 0)
-			   Vehicle(Victims).DriverRadiusDamage(DamageAmount, DamageRadius, InstigatorController, DamageType, Momentum, HitLocation);
+                if(pawn(victims)!=none && pawn(victims).controller!=none && playercontroller(pawn(victims).controller)!=none && flash!=vect(0,0,0))
+                    playercontroller(pawn(victims).controller).clientflash(1-damagescale, flash);
 
-		}
-	}
+                if (Vehicle(Victims) != None && Vehicle(Victims).Health > 0)
+                    Vehicle(Victims).DriverRadiusDamage(DamageAmount, DamageRadius, SavedIC, DamageType, Momentum, HitLocation);
+            }
+        }
+    }
 
-	bHurtEntry = false;
+    bHurtEntry = false;
 }
 
 function Timer()
@@ -285,25 +311,23 @@ state Dying
 Begin:
     DmgRadius(vect(10000,11000,12000), 0, 0.9, Damage*0.01, DamageRadius, class'OmniNukes.DamTypeOmniNukeFlash', MomentumTransfer*0, Location);
 
-    //Sleep(0.2);
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKBoom',SLOT_None,5*TransientSoundVolume);
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKRing',SLOT_None,1.0*TransientSoundVolume,false,TransientSoundRadius*1.5,0.3+frand()*0.7);
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKRing',SLOT_None,1.25*TransientSoundVolume,false,TransientSoundRadius*1.6,0.3+frand()*0.5);
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKRing',SLOT_None,1.5*TransientSoundVolume,false,TransientSoundRadius*1.7,0.3+frand()*0.3);
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKDistantBoom',SLOT_None,3*TransientSoundVolume,false,TransientSoundRadius*4);
 
-    //Deemer code
-    HurtRadius(Damage, DamageRadius*0.125, MyDamageType, MomentumTransfer, Location);
-    Sleep(0.3);
-    HurtRadius(Damage, DamageRadius*0.300, MyDamageType, MomentumTransfer, Location);
-    Sleep(0.15);
-    HurtRadius(Damage, DamageRadius*0.475, MyDamageType, MomentumTransfer, Location);
-    Sleep(0.15);
-    HurtRadius(Damage, DamageRadius*0.650, MyDamageType, MomentumTransfer, Location);
-    Sleep(0.15);
-    HurtRadius(Damage, DamageRadius*0.825, MyDamageType, MomentumTransfer, Location);
-    Sleep(0.15);
-    HurtRadius(Damage, DamageRadius*1.000, MyDamageType, MomentumTransfer, Location);
+	DmgRadius(vect(0,0,0), 1, 1, Damage, DamageRadius*0.125, MyDamageType, MomentumTransfer, Location);
+	Sleep(0.3);
+	DmgRadius(vect(0,0,0), 1, 1, Damage, DamageRadius*0.300, MyDamageType, MomentumTransfer, Location);
+	Sleep(0.15);
+	DmgRadius(vect(0,0,0), 1, 1, Damage, DamageRadius*0.475, MyDamageType, MomentumTransfer, Location);
+	Sleep(0.15);
+	DmgRadius(vect(0,0,0), 1, 1, Damage, DamageRadius*0.650, MyDamageType, MomentumTransfer, Location);
+	Sleep(0.15);
+	DmgRadius(vect(0,0,0), 1, 1, Damage, DamageRadius*0.825, MyDamageType, MomentumTransfer, Location);
+	Sleep(0.15);
+	DmgRadius(vect(0,0,0), 1, 1, Damage, DamageRadius*1.000, MyDamageType, MomentumTransfer, Location);
 
     //Shockwave
     DmgRadius(vect(0,0,0), 1, 0.40, Damage, DamageRadius*0.125, MyDamageType, MomentumTransfer, Location);

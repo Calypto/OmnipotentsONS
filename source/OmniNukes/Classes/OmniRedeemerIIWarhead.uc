@@ -12,6 +12,8 @@ var float YawAccel, PitchAccel;
 var float ExpStart;
 var float armor;
 
+var byte CachedTeamNum;
+var Controller SavedInstigatorController;
 
 // banking related
 var Shader InnerScopeShader, OuterScopeShader, OuterEdgeShader;
@@ -423,33 +425,55 @@ simulated function DmgRadius(vector flash, float dmgPctHard, float dmgPctThru, f
 	local actor Victims;
 	local float damageScale, dist;
 	local vector dir;
+    local Pawn DmgInstigator;
+    local Controller DmgController;
 
-	if ( bHurtEntry )
-		return;
+    if ( bHurtEntry )
+        return;
+
+    if ( OldPawn != None )
+        DmgInstigator = OldPawn;
+    else if ( SavedInstigatorController != None )
+        DmgInstigator = SavedInstigatorController.Pawn;
+    else
+        DmgInstigator = Instigator;
+
+    if ( SavedInstigatorController != None )
+        DmgController = SavedInstigatorController;
+    else if ( OldPawn != None && OldPawn.Controller != None )
+        DmgController = OldPawn.Controller;
 
     bHurtEntry = true;
 	foreach CollidingActors( class 'Actor', Victims, DamageRadius, HitLocation )
 	{
-		// don't let blast damage affect fluid - VisibleCollisingActors doesn't really work for them - jag
 		if( (Victims != self) && (Victims.Role == ROLE_Authority) && !Victims.IsA('FluidSurfaceInfo') )
 		{
-		    dir = Victims.Location - HitLocation;
-		    dist = FMax(1,VSize(dir));
-		    dir = dir/dist;
-		    damageScale = 1 - FMax(0,(dist - Victims.CollisionRadius)/DamageRadius);
-        if(!fasttrace(Victims.Location, hitlocation)) damagescale*=dmgPctThru;
-        if ( oldpawn.Controller != None ) Victims.SetDelayedDamageInstigatorController( oldpawn.Controller );
+			if ( CachedTeamNum == 255 || Pawn(Victims) == None ||
+				 Pawn(Victims).GetTeamNum() != CachedTeamNum )
+			{
+				dir = Victims.Location - HitLocation;
+				dist = FMax(1,VSize(dir));
+				dir = dir/dist;
+				damageScale = 1 - FMax(0,(dist - Victims.CollisionRadius)/DamageRadius);
+				if(!fasttrace(Victims.Location, hitlocation)) damagescale*=dmgPctThru;
 
-        if(pawn(victims)!=none) damagescale=damagescale;
-        else damagescale*=dmgPctHard;
+                if ( DmgController != None )
+                    Victims.SetDelayedDamageInstigatorController( DmgController );
 
-        Victims.TakeDamage(damageScale * DamageAmount,Instigator,	Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * dir,(damageScale * Momentum * dir),DamageType);
-		  	if(pawn(victims)!=none && pawn(victims).controller!=none && playercontroller(pawn(victims).controller)!=none && flash!=vect(0,0,0))
-             playercontroller(pawn(victims).controller).clientflash(1-damagescale, flash);
+				if(pawn(victims)!=none) damagescale=damagescale;
+				else damagescale*=dmgPctHard;
 
-        if (Vehicle(Victims) != None && Vehicle(Victims).Health > 0)
-				    Vehicle(Victims).DriverRadiusDamage(DamageAmount, DamageRadius, oldpawn.Controller, DamageType, Momentum, HitLocation);
+                Victims.TakeDamage(damageScale * DamageAmount, DmgInstigator,
+					Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * dir,
+					(damageScale * Momentum * dir), DamageType);
 
+				if(pawn(victims)!=none && pawn(victims).controller!=none && playercontroller(pawn(victims).controller)!=none && flash!=vect(0,0,0))
+					playercontroller(pawn(victims).controller).clientflash(1-damagescale, flash);
+
+                if ( Vehicle(Victims) != None && Vehicle(Victims).Health > 0 &&
+                     DmgController != None )
+                    Vehicle(Victims).DriverRadiusDamage(DamageAmount, DamageRadius, DmgController, DamageType, Momentum, HitLocation);
+			}
 		}
 	}
 
@@ -524,12 +548,8 @@ ignores Trigger, Bump, HitWall, HeadVolumeChange, PhysicsVolumeChange, Falling, 
     }
 
 Begin:
-	  Instigator = self;
+	Instigator = self;
     DmgRadius(vect(10000,11000,12000), 0, 0.9, Damage*0.01, DamageRadius, class'OmniNukes.DamTypeOmniNukeFlash', MomentumTransfer*0, Location);
-
-    //Sleep(0.2);
-    //RelinquishController();
-    // pooty - this might be the no damage bug, why reliquish controller now wait till same spot as regular deemer 
 
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKBoom',SLOT_None,5*TransientSoundVolume);
     PlaySound(sound'OmniNukesSounds.OmniNukes.TFNKRing',SLOT_None,1.0*TransientSoundVolume,false,TransientSoundRadius*1.5,0.3+frand()*0.7);
@@ -544,7 +564,6 @@ Begin:
     Sleep(0.15);
     HurtRadius(Damage, DamageRadius*0.475, MyDamageType, MomentumTransfer, Location);
     Sleep(0.15);
-    RelinquishController();
     HurtRadius(Damage, DamageRadius*0.650, MyDamageType, MomentumTransfer, Location);
     Sleep(0.15);
     HurtRadius(Damage, DamageRadius*0.825, MyDamageType, MomentumTransfer, Location);
@@ -560,26 +579,28 @@ Begin:
     Sleep(0.15);
     DmgRadius(vect(0,0,0), 1, 0.17, Damage*0.85, DamageRadius*0.388, MyDamageType, MomentumTransfer*0.85, Location);
     Sleep(0.15);
-//    DmgRadius(vect(500,400,100), 0.2, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
+//	DmgRadius(vect(500,400,100), 0.2, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
     DmgRadius(vect(0,0,0), 1, 0.16, Damage*0.8, DamageRadius*0.475, MyDamageType, MomentumTransfer*0.8, Location);
     Sleep(0.15);
-//    DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
-//    DmgRadius(vect(0,0,0), 1, 0.15, Damage*0.7, DamageRadius*0.563, MyDamageType, MomentumTransfer*0.7, Location);
-//    Sleep(0.2);
-//    DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
-//    DmgRadius(vect(0,0,0), 1, 0.14, Damage*0.6, DamageRadius*0.650, MyDamageType, MomentumTransfer*0.6, Location);
-//    Sleep(0.2);
-//    DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
-      DmgRadius(vect(0,0,0), 1, 0.13, Damage*0.45, DamageRadius*0.738, MyDamageType, MomentumTransfer*0.45, Location);
-      Sleep(0.1);
-//    DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
-//    DmgRadius(vect(0,0,0), 1, 0.12, Damage*0.3, DamageRadius*0.825, MyDamageType, MomentumTransfer*0.3, Location);
-//    Sleep(0.2);
-//    DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
-      DmgRadius(vect(0,0,0), 1, 0.11, Damage*0.1, DamageRadius*0.9, MyDamageType, MomentumTransfer*0.1, Location);
-//    Sleep(0.2);
-//    DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
-      DmgRadius(vect(0,0,0), 1, 0.10, Damage*0.05, DamageRadius*1.000, MyDamageType, MomentumTransfer*0.05, Location);
+//	DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
+//	DmgRadius(vect(0,0,0), 1, 0.15, Damage*0.7, DamageRadius*0.563, MyDamageType, MomentumTransfer*0.7, Location);
+//	Sleep(0.2);
+//	DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
+//	DmgRadius(vect(0,0,0), 1, 0.14, Damage*0.6, DamageRadius*0.650, MyDamageType, MomentumTransfer*0.6, Location);
+//	Sleep(0.2);
+//	DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
+	DmgRadius(vect(0,0,0), 1, 0.13, Damage*0.45, DamageRadius*0.738, MyDamageType, MomentumTransfer*0.45, Location);
+	Sleep(0.1);
+//	DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
+//	DmgRadius(vect(0,0,0), 1, 0.12, Damage*0.3, DamageRadius*0.825, MyDamageType, MomentumTransfer*0.3, Location);
+//	Sleep(0.2);
+//	DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
+	DmgRadius(vect(0,0,0), 1, 0.11, Damage*0.1, DamageRadius*0.9, MyDamageType, MomentumTransfer*0.1, Location);
+//	Sleep(0.2);
+//	DmgRadius(vect(500,400,100), 0.25, 0.50, (Damage/2)*(1-((level.TimeSeconds-expstart)/10)), 0.35*DamageRadius, class'WGS_wep_paky.DamTypeNKHeat', MomentumTransfer*-0.2, Location);
+	DmgRadius(vect(0,0,0), 1, 0.10, Damage*0.05, DamageRadius*1.000, MyDamageType, MomentumTransfer*0.05, Location);
+
+	RelinquishController();
 
     //Heat only
     while(level.TimeSeconds<expstart+10)
