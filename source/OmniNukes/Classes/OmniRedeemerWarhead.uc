@@ -520,4 +520,3 @@ defaultproperties
      ForceRadius=100.000000
      ForceScale=5.000000
 }
-
