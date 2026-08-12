@@ -916,9 +916,9 @@ defaultproperties
      bInitAimError=True
      YawBone="Object02"
      PitchBone="Object02"
-     PitchUpLimit=9000
+     PitchUpLimit=12000 // 9000 - help with antiair as it has no laser turret
      WeaponFireAttachmentBone="Muzzle"
-     RotationsPerSecond=0.500000
+     RotationsPerSecond=1.2500 // 0.5 - snappier aim
      FireInterval=0.350000
      AltFireInterval=0.120000
      FireSoundClass=SoundGroup'WeaponSounds.PulseRifle.PulseRifleFire'

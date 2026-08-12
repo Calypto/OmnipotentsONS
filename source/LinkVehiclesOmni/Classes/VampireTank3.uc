@@ -119,7 +119,7 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
 			Linkers[0].LinkingController = Healer;
 			Linkers[0].LastLinkTime = Level.TimeSeconds;
 			// If other players are linking that pawn, record it
-			if ( (Linkers[i].LinkingController.Pawn != None) && (Linkers[i].LinkingController.Pawn.Weapon != None) && (LinkGun(Linkers[i].LinkingController.Pawn.Weapon) != None) )
+			if ( (Linkers[i].LinkingController.Pawn != None) && (Linkers[0].LinkingController.Pawn.Weapon != None) && (LinkGun(Linkers[0].LinkingController.Pawn.Weapon) != None) )
 				Linkers[0].NumLinks = LinkGun(Linkers[0].LinkingController.Pawn.Weapon).Links;
 			else
 				Linkers[0].NumLinks = 0;
@@ -388,7 +388,7 @@ Begin:
 }
 */
 
-/* Doesn't link stack so no need for HUD symbols
+///* Doesn't link stack so no need for HUD symbols
 simulated function DrawHUD(Canvas C)
 {
 	local PlayerController PC;
@@ -410,7 +410,7 @@ simulated function DrawHUD(Canvas C)
 		PlayerHud.totalLinks.value = Links;
 	}
 }
-*/
+//*/
 
 static function StaticPrecache(LevelInfo L)
 {

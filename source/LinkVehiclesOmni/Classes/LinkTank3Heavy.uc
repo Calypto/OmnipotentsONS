@@ -117,7 +117,7 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
 			Linkers[0].LinkingController = Healer;
 			Linkers[0].LastLinkTime = Level.TimeSeconds;
 			// If other players are linking that pawn, record it
-			if ( (Linkers[i].LinkingController.Pawn != None) && (Linkers[i].LinkingController.Pawn.Weapon != None) && (LinkGun(Linkers[i].LinkingController.Pawn.Weapon) != None) )
+			if ( (Linkers[0].LinkingController.Pawn != None) && (Linkers[0].LinkingController.Pawn.Weapon != None) && (LinkGun(Linkers[0].LinkingController.Pawn.Weapon) != None) )
 				Linkers[0].NumLinks = LinkGun(Linkers[0].LinkingController.Pawn.Weapon).Links;
 			else
 				Linkers[0].NumLinks = 0;
