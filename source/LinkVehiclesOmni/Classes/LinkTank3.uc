@@ -51,6 +51,17 @@ var LinkAttachment.ELinkColor OldLinkColor;
 
 var LinkBeamEffect Beam;
 
+// Last button pressed wins vars
+enum EFirePriority
+{
+    FP_None,
+    FP_Primary,
+    FP_Alt
+};
+var EFirePriority FirePriority;
+var bool bPrimaryWasDown;
+var bool bAltWasDown;
+
 replication
 {
     unreliable if (Role == ROLE_Authority && bNetDirty)
@@ -253,6 +264,29 @@ simulated event Tick(float DT)
 	// Show regular green link panels
 	else
 		UpdateLinkColor(LC_Green);
+
+	if (Controller == None)
+	{
+		bPrimaryWasDown = false;
+		bAltWasDown = false;
+		FirePriority = FP_None;
+	}
+	else
+	{
+		if (Controller.bFire == 0)
+			bPrimaryWasDown = false;
+
+		if (Controller.bAltFire == 0)
+			bAltWasDown = false;
+
+		// If one button was released, transfer priority to whichever button is still held
+		if (Controller.bFire == 0 && Controller.bAltFire == 0)
+			FirePriority = FP_None;
+		else if (Controller.bFire != 0 && Controller.bAltFire == 0)
+			FirePriority = FP_Primary;
+		else if (Controller.bFire == 0 && Controller.bAltFire != 0)
+			FirePriority = FP_Alt;
+	}
 }
 
 // ============================================================================
@@ -334,25 +368,78 @@ event Timer()
 }
 */
 
-// Don't allow primary fire if beaming
 function Fire(optional float F)
 {
-	if (!bBeaming)
-		Super.Fire(F);
+    if (!bPrimaryWasDown)
+    {
+        bPrimaryWasDown = true;
+        SetFirePriority(FP_Primary);
+    }
+
+    if (FirePriority == FP_Primary)
+        Super.Fire(F);
+}
+
+function AltFire(optional float F)
+{
+    if (!bAltWasDown)
+    {
+        bAltWasDown = true;
+        SetFirePriority(FP_Alt);
+    }
+
+    if (FirePriority == FP_Alt)
+        Super(ONSVehicle).AltFire(F);
+}
+
+simulated function SetFirePriority(EFirePriority NewPriority)
+{
+    if (FirePriority == NewPriority)
+        return;
+
+    FirePriority = NewPriority;
+
+    if (FirePriority == FP_Primary)
+    {
+        if (bWeaponIsAltFiring)
+        {
+            if (Role == ROLE_Authority)
+                VehicleCeaseFire(true);
+            if (Level.NetMode != NM_DedicatedServer)
+                ClientVehicleCeaseFire(true);
+        }
+    }
+    else if (FirePriority == FP_Alt)
+    {
+        if (bWeaponIsFiring)
+        {
+            if (Role == ROLE_Authority)
+                VehicleCeaseFire(false);
+            if (Level.NetMode != NM_DedicatedServer)
+                ClientVehicleCeaseFire(false);
+        }
+    }
+}
+
+function VehicleCeaseFire(bool bWasAltFire)
+{
+    Super(ONSVehicle).VehicleCeaseFire(bWasAltFire);
+
+    if (bWasAltFire && Weapons.Length > 0 && Weapons[0] != None)
+        Weapons[0].WeaponCeaseFire(Controller, true);
+}
+
+simulated function ClientVehicleCeaseFire(bool bWasAltFire)
+{
+    Super(ONSVehicle).ClientVehicleCeaseFire(bWasAltFire);
+
+    if (bWasAltFire && Weapons.Length > 0 && Weapons[0] != None)
+        Weapons[0].WeaponCeaseFire(Controller, true);
 }
 
 // ============================================================================
 // C/P'd Ion Tank stuff
 // ============================================================================
-function AltFire(optional float F)
-{
-	super(ONSVehicle).AltFire( F );
-}
-
-function ClientVehicleCeaseFire(bool bWasAltFire)
-{
-	super(ONSVehicle).ClientVehicleCeaseFire( bWasAltFire );
-}
 
 simulated function SetupTreads()
 {
@@ -491,7 +578,7 @@ defaultproperties
      Skins(1)=Texture'LinkTank3Tex.LinkTankTex.LinkTankTread'
      Skins(2)=Texture'LinkTank3Tex.LinkTankTex.LinkTankTread'
      MaxGroundSpeed=875.000000
-		HoverCheckDist=67 // raise it just bit to avoid snags      
+		HoverCheckDist=71 // 67 raise it just bit to avoid snags      
 		Begin Object Class=KarmaParamsRBFull Name=KParams0
          KInertiaTensor(0)=1.300000
          KInertiaTensor(3)=4.000000

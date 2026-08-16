@@ -186,12 +186,16 @@ simulated function ClientStartFire(Controller C, bool bAltFire)
 // ============================================================================
 // Cease fire, destroy link beam
 // ============================================================================
-function WeaponCeaseFire(Controller C, bool bWasAltFire)
+simulated function WeaponCeaseFire(Controller C, bool bWasAltFire)
 {
 	local LinkBeamEffect Beam;
 
 	if (LinkTank3Mini(Owner) != None)
 		Beam = LinkTank3Mini(Owner).Beam;
+
+    // Always clear this when alt-fire ends, even if Beam is already None.
+	if (bWasAltFire && LinkTank3Mini(Owner) != None)
+		LinkTank3Mini(Owner).bBeaming = false;
 
 //	log(self@"ceasefire"@bWasAltFire,'KDebug');
 	if (bWasAltFire && Beam != None)
@@ -201,7 +205,7 @@ function WeaponCeaseFire(Controller C, bool bWasAltFire)
 		if (LinkTank3Mini(Owner) != None)
 		{
 			LinkTank3Mini(Owner).Beam = None;
-			LinkTank3Mini(Owner).bBeaming = false;
+			//LinkTank3Mini(Owner).bBeaming = false;
 		}
 		//AmbientSound = None;
 		Owner.AmbientSound = OldAmbientSound;

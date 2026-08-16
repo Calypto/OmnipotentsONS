@@ -537,7 +537,7 @@ defaultproperties
      DestructionEffectClass=Class'UT2k4Assault.FX_SpaceFighter_Explosion_Directional'
      DisintegrationEffectClass=None
      DisintegrationHealth=0.000000
-     FPCamPos=(X=-80.000000,Z=250.000000)
+     FPCamPos=(X=-80.000000,Z=200.000000) //-80, 250
      FPCamViewOffset=(X=25.000000)
      //TPCamLookat=(X=-50.000000,Z=0.000000)
      //TPCamWorldOffset=(Z=250.000000)
@@ -558,7 +558,7 @@ defaultproperties
     GroundSpeed=2300
     MaxGroundSpeed=2800
     MaxAirSpeed=8500
-    HoverCheckDist=67 // raise it just bit to avoid snags
+    HoverCheckDist=71 // raise it just bit to avoid snags
     Begin Object Class=KarmaParamsRBFull Name=KParams0
 			KStartEnabled=True
 			KFriction=0.4

@@ -165,12 +165,16 @@ simulated function ClientStartFire(Controller C, bool bAltFire)
 // ============================================================================
 // Cease fire, destroy link beam
 // ============================================================================
-function WeaponCeaseFire(Controller C, bool bWasAltFire)
+simulated function WeaponCeaseFire(Controller C, bool bWasAltFire)
 {
 	local LinkBeamEffect Beam;
 
 	if (LinkTank3Heavy(Owner) != None)
 		Beam = LinkTank3Heavy(Owner).Beam;
+
+    // Always clear this when alt-fire ends, even if Beam is already None.
+	if (bWasAltFire && LinkTank3Heavy(Owner) != None)
+		LinkTank3Heavy(Owner).bBeaming = false;
 
 //	log(self@"ceasefire"@bWasAltFire,'KDebug');
 	if (bWasAltFire && Beam != None)
@@ -180,7 +184,7 @@ function WeaponCeaseFire(Controller C, bool bWasAltFire)
 		if (LinkTank3Heavy(Owner) != None)
 		{
 			LinkTank3Heavy(Owner).Beam = None;
-			LinkTank3Heavy(Owner).bBeaming = false;
+			//LinkTank3Heavy(Owner).bBeaming = false;
 		}
 		//AmbientSound = None;
 		Owner.AmbientSound = OldAmbientSound;
@@ -849,8 +853,8 @@ state ProjectileFireMode
         //    AmbientSound = AltFireSoundClass;
         //else
         //   PlayOwnedSound(AltFireSoundClass, SLOT_None, FireSoundVolume/255.0,, FireSoundRadius, FireSoundPitch, False);
-
-        TraceFire(WeaponFireLocation, WeaponFireRotation);
+		
+		TraceFire(WeaponFireLocation, WeaponFireRotation);
     }
 }
 
