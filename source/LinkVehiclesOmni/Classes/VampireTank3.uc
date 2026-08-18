@@ -89,6 +89,7 @@ simulated function UpdateLinkColor( LinkAttachment.ELinkColor Color )
 // When someone links the tank, record it and add it to the Linkers
 // After a certain time period passes, remove that linker if they aren't linking anymore
 // ============================================================================
+/*
 function bool HealDamage(int Amount, Controller Healer, class<DamageType> DamageType)
 {
 	local int i;
@@ -127,6 +128,67 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
 	}
 
 	return super.HealDamage(Amount, Healer, DamageType);
+}
+*/
+
+// Vehicle chain linking support by Anon
+function int GetHealerLinks(Controller Healer)
+{
+    local string LinkStr;
+
+    if (Healer == None || Healer.Pawn == None)
+        return 0;
+
+    // 1. If healer is in a vehicle (LinkTank, TickScorpion, LinkBadger, etc.)
+    if (Vehicle(Healer.Pawn) != None)
+    {
+        LinkStr = Healer.Pawn.GetPropertyText("Links");
+        if (LinkStr != "")
+            return int(LinkStr);
+    }
+    // 2. If healer is a player holding a LinkGun
+    else if (Healer.Pawn.Weapon != None && LinkGun(Healer.Pawn.Weapon) != None)
+    {
+        return LinkGun(Healer.Pawn.Weapon).Links;
+    }
+
+    return 0;
+}
+
+function bool HealDamage(int Amount, Controller Healer, class<DamageType> DamageType)
+{
+    local int i;
+    local bool bFound;
+    local int InboundLinks;
+
+    if (Healer == None || Healer.bDeleteMe)
+        return false;
+
+    if (TeamLink(Healer.GetTeamNum()) && Healer != Controller)
+    {
+        InboundLinks = GetHealerLinks(Healer);
+
+        for (i = 0; i < Linkers.Length; i++)
+        {
+            if (Linkers[i].LinkingController != None && Linkers[i].LinkingController == Healer)
+            {
+                bFound = true;
+                Linkers[i].LastLinkTime = Level.TimeSeconds;
+                Linkers[i].NumLinks = InboundLinks;
+                break;
+            }
+        }
+
+        if (!bFound)
+        {
+            Linkers.Insert(0, 1);
+            Linkers[0].LinkingController = Healer;
+            Linkers[0].LastLinkTime = Level.TimeSeconds;
+            Linkers[0].NumLinks = InboundLinks;
+        }
+    }
+
+    return super.HealDamage(Amount, Healer, DamageType);
 }
 
 // ============================================================================
