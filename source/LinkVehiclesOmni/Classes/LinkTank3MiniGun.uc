@@ -160,11 +160,13 @@ function SpawnBeamEffect(Vector Start, Rotator Dir, Vector HitLocation, Vector H
 	if (FoundBeam == None)
 	{
 		FoundBeam = Spawn(BeamEffectClass, Owner,,WeaponFireLocation);
-		if (LinkTank3Mini(Owner) != None) LinkTank3Mini(Owner).Beam = FoundBeam;
+
+		if (LinkTank3Mini(Owner) != None)
+			LinkTank3Mini(Owner).Beam = FoundBeam;
 	}
 
-	//if (LinkBeamEffect(Beam) != None)
-	//	LinkBeamEffect(Beam).WeaponOwner = self;
+	if (LinkTank3BeamEffect(FoundBeam) != None)
+		LinkTank3BeamEffect(FoundBeam).WeaponOwner = self;
 
 	bDoHit = true;
 	UpTime = AltFireInterval + 0.1;

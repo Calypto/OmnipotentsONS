@@ -62,6 +62,8 @@ var EFirePriority FirePriority;
 var bool bPrimaryWasDown;
 var bool bAltWasDown;
 
+var int ExportLinks; // Links advertised to the vehicle we are healing
+
 replication
 {
     unreliable if (Role == ROLE_Authority && bNetDirty)
@@ -141,25 +143,108 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
 */
 
 // Vehicle chain linking support by Anon
+function Pawn GetOutboundLinkTarget()
+{
+    local LinkBeamEffect B;
+
+    if (Beam != None && Beam.LinkedPawn != None)
+        return Beam.LinkedPawn;
+
+    foreach DynamicActors(class'LinkBeamEffect', B)
+    {
+        if (B != None && !B.bDeleteMe && B.LinkedPawn != None
+            && (B.Owner == self || B.Instigator == self))
+            return B.LinkedPawn;
+    }
+
+    return None;
+}
+
+function Pawn GetActorLinkTarget(Pawn P)
+{
+    local LinkBeamEffect B;
+    local LinkGun LG;
+    local Vehicle V;
+
+    if (P == None)
+        return None;
+
+    if (LinkTank3(P) != None)
+        return LinkTank3(P).GetOutboundLinkTarget();
+
+    if (P.Weapon != None)
+    {
+        LG = LinkGun(P.Weapon);
+        if (LG != None && LinkFire(LG.GetFireMode(1)) != None)
+            return LinkFire(LG.GetFireMode(1)).LockedPawn;
+    }
+
+    V = Vehicle(P);
+    foreach DynamicActors(class'LinkBeamEffect', B)
+    {
+        if (B == None || B.bDeleteMe || B.LinkedPawn == None)
+            continue;
+        if (B.Owner == P || B.Instigator == P)
+            return B.LinkedPawn;
+        if (V != None && (B.Instigator == V || B.Instigator == V.Driver))
+            return B.LinkedPawn;
+    }
+
+    return None;
+}
+
+function bool OutboundReaches(Pawn Goal)
+{
+    local Pawn Walk, Next;
+    local int Sanity;
+
+    if (Goal == None)
+        return false;
+
+    Walk = GetOutboundLinkTarget();
+    while (Walk != None && Sanity < 32)
+    {
+        if (Walk == Goal)
+            return true;
+        Next = GetActorLinkTarget(Walk);
+        if (Next == None || Next == Walk)
+            return false;
+        Walk = Next;
+        Sanity++;
+    }
+
+    return false;
+}
+
 function int GetHealerLinks(Controller Healer)
 {
+    local Pawn P;
+    local Vehicle V;
     local string LinkStr;
 
     if (Healer == None || Healer.Pawn == None)
         return 0;
 
-    // 1. If healer is in a vehicle (LinkTank, TickScorpion, LinkBadger, etc.)
-    if (Vehicle(Healer.Pawn) != None)
+    P = Healer.Pawn;
+    V = Vehicle(P);
+    if (ONSWeaponPawn(V) != None)
+        V = ONSWeaponPawn(V).VehicleBase;
+
+    if (V != None)
     {
-        LinkStr = Healer.Pawn.GetPropertyText("Links");
+        // A -> B -> C -> A: do not copy C.Links into A
+        if (OutboundReaches(V) || OutboundReaches(P))
+            return 0;
+
+        LinkStr = V.GetPropertyText("ExportLinks");
         if (LinkStr != "")
-            return int(LinkStr);
+            return Max(0, int(LinkStr));
+
+        return 0; // never fall back to Links
     }
-    // 2. If healer is a player holding a LinkGun
-    else if (Healer.Pawn.Weapon != None && LinkGun(Healer.Pawn.Weapon) != None)
-    {
-        return LinkGun(Healer.Pawn.Weapon).Links;
-    }
+
+    if (P.Weapon != None && LinkGun(P.Weapon) != None)
+        return LinkGun(P.Weapon).Links;
 
     return 0;
 }
@@ -215,26 +300,41 @@ function int GetLinks()
 // ============================================================================
 function ResetLinks()
 {
-	local int i;
-	local int NewLinks;
+    local int i, NewLinks, Deduct;
+    local Pawn TargetPawn, LinkerPawn;
 
-	i = 0;
-	NewLinks = 0;
-	while (i < Linkers.Length)
-	{
-		// Remove linkers when their controllers are deleted
-		// Or remove if LINK_DECAY_TIME seconds pass since they last linked the tank
-		if (Linkers[i].LinkingController == None || Level.TimeSeconds - Linkers[i].LastLinkTime > LINK_DECAY_TIME)
-			Linkers.Remove(i,1);
-		else
-		{
-			NewLinks += 1 + Linkers[i].NumLinks;
-			i++;
-		}
-	}
+    TargetPawn = GetOutboundLinkTarget();
 
-	if (Links != NewLinks)
-		Links = NewLinks;
+    i = 0;
+    NewLinks = 0;
+    Deduct = 0;
+
+    while (i < Linkers.Length)
+    {
+        if (Linkers[i].LinkingController == None
+            || Level.TimeSeconds - Linkers[i].LastLinkTime > LINK_DECAY_TIME)
+        {
+            Linkers.Remove(i, 1);
+        }
+        else
+        {
+            NewLinks += 1 + Linkers[i].NumLinks;
+
+            LinkerPawn = Linkers[i].LinkingController.Pawn;
+            if (ONSWeaponPawn(LinkerPawn) != None)
+                LinkerPawn = ONSWeaponPawn(LinkerPawn).VehicleBase;
+
+            // Current target, or anyone already on our outbound chain
+            if ((TargetPawn != None && LinkerPawn == TargetPawn)
+                || OutboundReaches(LinkerPawn))
+                Deduct += 1 + Linkers[i].NumLinks;
+
+            i++;
+        }
+    }
+
+    Links = NewLinks;
+    ExportLinks = Max(0, NewLinks - Deduct);
 }
 
 
@@ -640,7 +740,7 @@ defaultproperties
      Skins(1)=Texture'LinkTank3Tex.LinkTankTex.LinkTankTread'
      Skins(2)=Texture'LinkTank3Tex.LinkTankTex.LinkTankTread'
      MaxGroundSpeed=875.000000
-		HoverCheckDist=71 // 67 raise it just bit to avoid snags      
+		HoverCheckDist=72 // 67 raise it just bit to avoid snags      
 		Begin Object Class=KarmaParamsRBFull Name=KParams0
          KInertiaTensor(0)=1.300000
          KInertiaTensor(3)=4.000000
