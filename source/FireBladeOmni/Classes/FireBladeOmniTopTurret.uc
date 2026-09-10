@@ -91,8 +91,8 @@ defaultproperties
      MinAim=0.925000
      YawBone="REARgunBASE"
      PitchBone="REARgunTURRET"
-     PitchUpLimit=40000
-     PitchDownLimit=-5000
+     PitchUpLimit=17000
+     PitchDownLimit=49152
      WeaponFireAttachmentBone="GunFire"
      DualFireOffset=15.000000
      bInstantRotation=True
