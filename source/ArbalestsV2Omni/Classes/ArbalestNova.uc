@@ -17,6 +17,27 @@ var float MaxGroundSpeed, MaxAirSpeed;
 var localized string CoPilotLabel;
 var float LastHudRenderTime;
 
+var rotator SavedCameraRotation;
+var int CameraRestoreCount;
+var int LastAppliedCameraRestoreCount;
+
+replication
+{
+    reliable if (bNetOwner && Role == ROLE_Authority)
+        SavedCameraRotation, CameraRestoreCount;
+}
+
+simulated function ClientKDriverEnter(PlayerController PC)
+{
+    Super.ClientKDriverEnter(PC);
+
+    if ( CameraRestoreCount != LastAppliedCameraRestoreCount )
+    {
+        PC.SetRotation(SavedCameraRotation);
+        LastAppliedCameraRestoreCount = CameraRestoreCount;
+    }
+}
+
 
 // Fire alt-fire once per click
 function AltFire(optional float F)

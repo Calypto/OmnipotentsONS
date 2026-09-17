@@ -120,6 +120,12 @@ state ProjectileFireMode
 			if (M != None)
 			{
 				M.OldPawn = Instigator;
+				if (ArbalestNova(Instigator) != None)
+				{
+					ArbalestNova(Instigator).SavedCameraRotation = C.Rotation;
+					ArbalestNova(Instigator).CameraRestoreCount++;
+				}
+				Possessor = PlayerController(Instigator.Controller);
 				//M.PlaySound(FireSound);
 				Possessor = PlayerController(Instigator.Controller);
 				Possessor.bAltFire = 0;
@@ -146,6 +152,11 @@ state ProjectileFireMode
 			if (M != None)
 			{
 				M.OldPawn = Instigator;
+				if (ArbalestNova(Instigator) != None)
+				{
+					ArbalestNova(Instigator).SavedCameraRotation = C.Rotation;
+					ArbalestNova(Instigator).CameraRestoreCount++;
+				}
 				//M.PlaySound(FireSound);
 				Possessor = PlayerController(Instigator.Controller);
 				Possessor.bAltFire = 0;

@@ -102,6 +102,11 @@ state ProjectileFireMode
 			if (M != None)
 			{
 				M.OldPawn = Instigator;
+				if (ArbalestBomb(Instigator) != None)
+				{
+					ArbalestBomb(Instigator).SavedCameraRotation = C.Rotation;
+					ArbalestBomb(Instigator).CameraRestoreCount++;
+				}
 				Possessor = PlayerController(Instigator.Controller);
 				Possessor.bAltFire = 0;
 				if ( Possessor != None )
@@ -127,6 +132,11 @@ state ProjectileFireMode
 			if (M != None)
 			{
 				M.OldPawn = Instigator;
+				if (ArbalestBomb(Instigator) != None)
+				{
+					ArbalestBomb(Instigator).SavedCameraRotation = C.Rotation;
+					ArbalestBomb(Instigator).CameraRestoreCount++;
+				}
 				Possessor = PlayerController(Instigator.Controller);
 				Possessor.bAltFire = 0;
 				if ( Possessor != None )
@@ -151,6 +161,11 @@ state ProjectileFireMode
 			if (M != None)
 			{
 				M.OldPawn = Instigator;
+				if (ArbalestBomb(Instigator) != None)
+				{
+					ArbalestBomb(Instigator).SavedCameraRotation = C.Rotation;
+					ArbalestBomb(Instigator).CameraRestoreCount++;
+				}
 				Possessor = PlayerController(Instigator.Controller);
 				Possessor.bAltFire = 0;
 				if ( Possessor != None )
