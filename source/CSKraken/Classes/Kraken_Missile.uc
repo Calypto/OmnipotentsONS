@@ -14,7 +14,7 @@ static function ScoreKill(Controller Killer, Controller Killed)
 defaultproperties
 {
      VehicleClass=Class'CSKraken.KrakenMissileGunPawn'
-     DeathString="%o was stung by %k's Tiamat Missiles."
+     DeathString="%o was stung by %k's Kraken Missiles."
      FemaleSuicide="%o stung herself. Oh dear."
      MaleSuicide="%o stung himself. Oh dear."
      bDelayedDamage=True

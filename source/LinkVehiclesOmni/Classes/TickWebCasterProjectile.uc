@@ -127,22 +127,31 @@ simulated event PostNetReceive()
 	}
 }
 
-
 simulated function ProcessTouch(actor Other, vector HitLocation)
 {
-	//Don't hit the player that fired me
+    //Don't hit the player that fired me
 	if (Other == Instigator || Vehicle(Instigator) != None && Other == Vehicle(Instigator).Driver)
-		return;
+        return;
 
-	// If we hit some stuff - just blow up straight away.
-	if (Other.IsA('Projectile') || Other.bBlockProjectiles)
-	{
-		if (Role == ROLE_Authority)
-			Leader.DetonateWeb();
-	}
-	else
-	{
-		StuckActor = Other;
+    // Always stick to vehicles and objectives (power cores, nodes), 
+    // even if they have bBlockProjectiles=True
+    if (Other.IsA('Vehicle') || Other.IsA('DestroyableObjective'))
+    {
+        StuckActor = Other;
+        StuckNormal = normal(HitLocation - Other.Location);
+        GotoState('Stuck');
+        return;
+    }
+
+    // If we hit some stuff - just blow up straight away.
+    if (Other.IsA('Projectile') || Other.bBlockProjectiles)
+    {
+        if (Role == ROLE_Authority)
+            Leader.DetonateWeb();
+    }
+    else
+    {
+        StuckActor = Other;
 		if (Level.NetMode != NM_Client && StuckActor != None && ClassIsChildOf(StuckActor.Class, ExtraDamageClass)
 			&& Bot(Pawn(StuckActor).Controller) != None && Level.Game.GameDifficulty > 6 * FRand())
 		{
@@ -150,24 +159,32 @@ simulated function ProcessTouch(actor Other, vector HitLocation)
 			Vehicle(StuckActor).VehicleLostTime = Level.TimeSeconds + 10;
 			Vehicle(StuckActor).KDriverLeave(false);
 		}
-		StuckNormal = normal(HitLocation - Other.Location);
-		GotoState('Stuck');
-	}
+        StuckNormal = normal(HitLocation - Other.Location);
+        GotoState('Stuck');
+    }
 }
 
 simulated function HitWall(vector HitNormal, Actor Wall)
 {
-	if (Wall.bBlockProjectiles)
-	{
-		if (Role == ROLE_Authority)
-			Leader.DetonateWeb();
+    // Always stick to vehicles and objectives
+    if (Wall.IsA('Vehicle') || Wall.IsA('DestroyableObjective'))
+    {
+        StuckActor = Wall;
+        StuckNormal = HitNormal;
+        GoToState('Stuck');
+        return;
+    }
 
-		return;
-	}
+    if (Wall.bBlockProjectiles)
+    {
+        if (Role == ROLE_Authority)
+            Leader.DetonateWeb();
+        return;
+    }
 
-	StuckActor = Wall;
-	StuckNormal = HitNormal;
-	GoToState('Stuck');
+    StuckActor = Wall;
+    StuckNormal = HitNormal;
+    GoToState('Stuck');
 }
 
 // Server-side only
@@ -284,7 +301,9 @@ defaultproperties
      bUpdateSimulatedPosition=True
      NetUpdateFrequency=10.000000
      bDynamicLight=False
-     CollisionRadius=5.000000
-     CollisionHeight=5.000000
+     //CollisionRadius=5.000000 // Because this is a non-zero extent, it can't pass through the collision cylinder of power cores
+     //CollisionHeight=5.000000
+     CollisionRadius=0.0
+     CollisionHeight=0.0
      Mass=10.000000
 }

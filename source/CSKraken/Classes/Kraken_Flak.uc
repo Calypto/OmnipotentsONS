@@ -53,19 +53,20 @@ simulated function PostBeginPlay()
 
 simulated function ProcessTouch (Actor Other, vector HitLocation)
 {
-    if ( (FlakChunk(Other) == None) && ((Physics == PHYS_Falling) || (Other != Instigator)) )
+    // Ignore the Instigator (driver) and the Owner (the Kraken vehicle body)
+    if ( (FlakChunk(Other) == None) && ((Physics == PHYS_Falling) || (Other != Instigator && Other != Owner)) )
     {
         speed = VSize(Velocity);
         if ( speed > 200 )
         {
             if ( Role == ROLE_Authority )
-			{
-				if ( Instigator == None || Instigator.Controller == None )
-					Other.SetDelayedDamageInstigatorController( InstigatorController );
+            {
+                if ( Instigator == None || Instigator.Controller == None )
+                    Other.SetDelayedDamageInstigatorController( InstigatorController );
 
                 Other.TakeDamage( Max(5, Damage - DamageAtten*FMax(0,(default.LifeSpan - LifeSpan - 1))), Instigator, HitLocation,
                     (MomentumTransfer * Velocity/speed), MyDamageType );
-			}
+            }
         }
         Destroy();
     }

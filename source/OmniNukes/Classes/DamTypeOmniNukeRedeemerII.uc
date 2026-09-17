@@ -11,4 +11,5 @@ defaultproperties
      bLocationalHit=False
      bDetonatesGoop=True
      bSuperWeapon=True
+	 bDelayeddamage=True
 }

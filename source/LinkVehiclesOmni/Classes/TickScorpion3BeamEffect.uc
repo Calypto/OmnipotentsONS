@@ -88,7 +88,8 @@ simulated function Tick(float dt)
 
 	if ( Level.NetMode != NM_DedicatedServer )
 	{
-		if ( (Instigator != None) && !Instigator.IsFirstPerson() )
+    // Added !Instigator.IsLocallyControlled() so the driver doesn't see the flare
+    if ( Instigator != None && !Instigator.IsFirstPerson() && !Instigator.IsLocallyControlled() )
 		{
 			if ( MuzFlash == None )
 				MuzFlash = Spawn(class'LinkMuzFlashBeam3rd', self);

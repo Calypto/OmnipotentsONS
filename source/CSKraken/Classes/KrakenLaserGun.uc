@@ -41,9 +41,33 @@ function TraceFire(Vector Start, Rotator Dir)
     local Vector X, End, HitLocation, HitNormal;
     local Actor Other;
     local int Damage;
+//	local ONSWeaponPawn WeapPawn;
+//	local ONSVehicle BaseVehicle;
 
     X = Vector(Dir);
     End = Start + TraceRange * X;
+
+/*
+	// Let the lasers shoot through the body of the vehicle, might be too strong
+	WeapPawn = ONSWeaponPawn(Instigator);
+	
+    if (WeapPawn != None)
+        BaseVehicle = WeapPawn.VehicleBase;
+
+    // Let lasers go through the vehicle
+    if (BaseVehicle != None)
+        BaseVehicle.bBlockZeroExtentTraces = False;
+    if (WeapPawn != None && WeapPawn.Driver != None)
+        WeapPawn.Driver.bBlockZeroExtentTraces = False;
+
+    Other = Trace(HitLocation, HitNormal, End, Start, True);
+
+    // Restore collision
+    if (BaseVehicle != None)
+        BaseVehicle.bBlockZeroExtentTraces = True;
+    if (WeapPawn != None && WeapPawn.Driver != None)
+        WeapPawn.Driver.bBlockZeroExtentTraces = True;
+*/
 
     //skip past vehicle driver
     if (ONSVehicle(Instigator) != None && ONSVehicle(Instigator).Driver != None)

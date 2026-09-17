@@ -24,7 +24,9 @@ function Projectile SpawnProjectile(Vector Start, Rotator Dir)
 		    }
 		    Warhead.Velocity = Warhead.AirSpeed * Vector(Warhead.Rotation);
 		    Warhead.Acceleration = Warhead.Velocity;
-		    WarHead.MyTeam = Possessor.PlayerReplicationInfo.Team;
+			WarHead.MyTeam = Possessor.PlayerReplicationInfo.Team;
+			WarHead.CachedTeamNum = Possessor.PlayerReplicationInfo.Team.TeamIndex;
+			WarHead.SavedInstigatorController = Possessor;
     }
     else
     {
@@ -39,5 +41,4 @@ function Projectile SpawnProjectile(Vector Start, Rotator Dir)
 
 defaultproperties
 {
-
 }

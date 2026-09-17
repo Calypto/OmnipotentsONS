@@ -28,23 +28,44 @@ var bool bAltFireProjOffset;
 var rotator ProjSpawnOffset;
 var rotator AltFireProjSpawnOffset;
 
-
 state ProjectileFireMode
 {
     function Fire(Controller C)
     {
-    	DoFireEffect(ProjectileClass, False);
+        local ONSWeaponPawn WeaponPawn;
+
+        WeaponPawn = ONSWeaponPawn(Owner);
+        if (WeaponPawn != None && WeaponPawn.VehicleBase != None)
+        {
+            if (WeaponPawn.VehicleBase.IsA('SmallKraken'))
+                ProjPerFire = 14;
+            else
+                ProjPerFire = 16;
+        }
+
+        DoFireEffect(ProjectileClass, False);
     }
 
     function AltFire(Controller C)
     {
+        local ONSWeaponPawn WeaponPawn;
+
+        WeaponPawn = ONSWeaponPawn(Owner);
+        if (WeaponPawn != None && WeaponPawn.VehicleBase != None)
+        {
+            if (WeaponPawn.VehicleBase.IsA('SmallKraken'))
+                AltFireProjPerFire = 17;
+            else
+                AltFireProjPerFire = 20;
+        }
+
         if (AltFireProjectileClass == None)
             Fire(C);
         else
             DoFireEffect(AltFireProjectileClass, True);
     }
 }
-                                    
+
 function DoFireEffect(class<Projectile> ProjClass, bool bAltFire)
 {
 	local Rotator R, AdjustedAim;
@@ -157,8 +178,17 @@ function DoFireEffect(class<Projectile> ProjClass, bool bAltFire)
 function Projectile SpawnAdvancedProjectile(class<Projectile> ProjClass, bool bAltFire, vector Loc, rotator Rot)
 {
     local Projectile P;
+    local Actor ProjOwner;
+    local ONSWeaponPawn WeaponPawn;
 
-    P = spawn(ProjClass, self, , Loc, Rot);
+    // Determine the true base vehicle to set as the projectile's owner to allow chunks to pass through
+    WeaponPawn = ONSWeaponPawn(Owner);
+    if (WeaponPawn != None && WeaponPawn.VehicleBase != None)
+        ProjOwner = WeaponPawn.VehicleBase;
+    else
+        ProjOwner = self;
+
+    P = spawn(ProjClass, ProjOwner, , Loc, Rot);
 
     if (P != None)
     {
@@ -166,15 +196,14 @@ function Projectile SpawnAdvancedProjectile(class<Projectile> ProjClass, bool bA
             P.Velocity = Instigator.Velocity;
 
         FlashMuzzleFlash();
-
     }
     return P;
 }
 
 defaultproperties
 {
-     ProjPerFire=14
-     AltFireProjPerFire=14
+     ProjPerFire=14 // The actual values are set in ProjectileFireMode()
+     AltFireProjPerFire=14 // The actual values are set in ProjectileFireMode()
      ProjSpread=700
      AltFireProjSpread=2000
      SpreadStyle=SS_Random
@@ -182,7 +211,7 @@ defaultproperties
      YawBone="Object83"
      PitchBone="Object83"
      PitchUpLimit=8000
-     PitchDownLimit=62500
+     PitchDownLimit=50000 // 62500
      WeaponFireAttachmentBone="Object85"
      GunnerAttachmentBone="Object83"
      RedSkin=Texture'DevilsArsenal_Tex.Kraken.KrakenRed'

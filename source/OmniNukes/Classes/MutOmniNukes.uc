@@ -74,9 +74,8 @@ function bool CheckReplacement( Actor Other, out byte bSuperRelevant )
 
 defaultproperties
 {
-     FriendlyName="Omni Nukes 1.01"
-     Description="Replaces the regular Redeemer with Omni Version, buggy WGSNuke/RedeemerII with OmniRedeemerII"
      bAddToServerPackages=True
+     FriendlyName="Omni Nukes 1.03"
+     Description="Replaces the regular Redeemer with Omni Version, buggy WGSNuke/RedeemerII with OmniRedeemerII"
      bDebug=False
-   
 }
