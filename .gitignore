@@ -1,0 +1,7 @@
+# Local UT2004 game config, not mod content
+UT2004.ini
+User.ini
+
+# Editor/working duplicates
+* - Copy.*
+*copy2.*
