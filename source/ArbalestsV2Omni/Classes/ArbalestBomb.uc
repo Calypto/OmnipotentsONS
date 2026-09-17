@@ -14,6 +14,35 @@ var float MaxGroundSpeed, MaxAirSpeed;
 var localized string CoPilotLabel;
 var float LastHudRenderTime;
 
+
+// Fire alt-fire once per click
+function AltFire(optional float F)
+{
+    if (bWeaponIsAltFiring)
+        return;
+
+    VehicleFire(True);
+}
+
+function VehicleFire(bool bWasAltFire)
+{
+    local ArbalestRocketLauncherBomb W;
+
+    if (!bWasAltFire)
+    {
+        Super.VehicleFire(bWasAltFire);
+        return;
+    }
+
+    if (Weapons.Length > 0)
+    {
+        W = ArbalestRocketLauncherBomb(Weapons[0]);
+        if (W != None)
+            W.AltFire(Controller);
+    }
+}
+
+
 simulated function DrawHUD(Canvas Canvas)
 {
 	local float xl,yl,posy;
