@@ -288,6 +288,7 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
     local int i;
     local bool bFound;
     local int InboundLinks;
+    local bool bHealed;
 
     if (Healer == None || Healer.bDeleteMe)
         return false;
@@ -316,7 +317,13 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
         }
     }
 
-    return super.HealDamage(Amount, Healer, DamageType);
+    bHealed = super.HealDamage(Amount, Healer, DamageType);
+
+    // Scale it based on healing (after Health has been updated)
+    if (bHealed)
+        ScaleTickScorp(true, Amount);
+
+    return bHealed;
 }
 
 function ResetLinks()
@@ -452,14 +459,19 @@ function ShouldTargetMissile(Projectile P)
 
 function TakeDamage(int Damage, Pawn instigatedBy, Vector Hitlocation, Vector Momentum, class<DamageType> DamageType)
 {
-	  ScaleTickScorp(false, Damage);
 	  //if (TickScorpGun.bActive)
 	   Momentum *= 0; //sucking don't allow momentum... we are "stuck" might want to check locked pawn (link beam locked)
     Super.TakeDamage(Damage, instigatedBy, Hitlocation, Momentum, damageType);
+	  // Scale after damage so it uses the current Health
+	  ScaleTickScorp(false, Damage);
 }
 
 simulated function ScaleTickScorp(bool bHeal, int Damage){
-	
+
+	// Dead wreck (VehicleDestroyed state) still takes damage, but its weapons are already gone
+	if (Health <= 0 || bDeleteMe)
+		return;
+
 	CurrDrawScale = FMax(1,(Health/HealthMax)*2.33);
 	NewSkin = Clamp(Round(Health/HealthMax*3.1)-1,0,2);
 	//log(self$"Health="$Health$", HealthMax="$HealthMax$" NewSkin="$NewSkin);
@@ -468,9 +480,12 @@ simulated function ScaleTickScorp(bool bHeal, int Damage){
 	// Mesh is also a constant so you can't change it.
 	// So lets play with other attributes/skins
 	  //Scale Gun though
-	  Gun = Weapons[0];
-	  Gun.SetDrawScale(FClamp(CurrDrawScale,1,1.5));
-		TS3Gun = TickScorpion3Gun(Gun);
+	  if (Weapons.Length > 0 && Weapons[0] != None)
+	  {
+		  Gun = Weapons[0];
+		  Gun.SetDrawScale(FClamp(CurrDrawScale,1,1.5));
+		  TS3Gun = TickScorpion3Gun(Gun);
+	  }
 		
 	//AmbientGlow=FMax(default.AmbientGlow*CurrDrawScale, 255);
 	if (NewSkin != OldSkin) {  // only change skins when needed.
