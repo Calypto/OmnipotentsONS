@@ -70,6 +70,74 @@ function SpawnBeamEffect(Vector Start, Rotator Dir, Vector HitLocation, Vector H
 		Beam.SetupBeam();
 }
 
+// Stock ONSWeapon.TraceFire, traced from the vehicle the gun is bone-attached to (Base). Native line checks
+// skip their source actor, so the beam passes through the Hospitaler's own hull (bDoOffsetTrace only cleared
+// it within 1.5x CollisionRadius). Not reflective, and turret drivers have no collision, so the stock reflect
+// loop and driver toggle are dropped: one trace per shot instead of two.
+function TraceFire(Vector Start, Rotator Dir)
+{
+	local Vector X, End, HitLocation, HitNormal;
+	local Actor Other, Tracer;
+
+	MaxRange();
+	X = Vector(Dir);
+	End = Start + TraceRange * X;
+
+	Tracer = Base;
+	if (Tracer == None)
+		Tracer = self;
+	Other = Tracer.Trace(HitLocation, HitNormal, End, Start, true);
+
+	if (Other == None)
+	{
+		HitLocation = End;
+		HitNormal = vect(0,0,0);
+		HitCount++;
+		LastHitLocation = HitLocation;
+	}
+	else if (Other.bWorldGeometry)
+	{
+		HitCount++;
+		LastHitLocation = HitLocation;
+		SpawnHitEffects(Other, HitLocation, HitNormal);
+	}
+	else
+	{
+		if (Vehicle(Other) != None || Pawn(Other) == None)
+		{
+			HitCount++;
+			LastHitLocation = HitLocation;
+			SpawnHitEffects(Other, HitLocation, HitNormal);
+		}
+		Other.TakeDamage(DamageMin + Rand(DamageMax - DamageMin), Instigator, HitLocation, Momentum * X, DamageType);
+		HitNormal = vect(0,0,0);
+	}
+
+	SpawnBeamEffect(Start, Dir, HitLocation, HitNormal, 0);
+	NetUpdateTime = Level.TimeSeconds - 1;
+}
+
+// Stock ONSWeapon.CanAttack (instant hit), with the friendly-in-the-way trace run from the vehicle (Base)
+// so bots don't treat their own hull as a teammate blocking the shot.
+function bool CanAttack(Actor Other)
+{
+	local Vector HitLocation, HitNormal;
+	local Actor HitActor, Tracer;
+
+	if (Instigator == None || Instigator.Controller == None || VSize(Instigator.Location - Other.Location) > MaxRange()
+		|| !Instigator.Controller.LineOfSightTo(Other))
+		return false;
+
+	CalcWeaponFire();
+	Tracer = Base;
+	if (Tracer == None)
+		Tracer = self;
+	HitActor = Tracer.Trace(HitLocation, HitNormal, Other.Location + Other.CollisionHeight * vect(0,0,0.8), WeaponFireLocation, true);
+
+	return HitActor == None || HitActor == Other || Pawn(HitActor) == None || Pawn(HitActor).Controller == None
+		|| !Instigator.Controller.SameTeamAs(Pawn(HitActor).Controller);
+}
+
 simulated function InitEffects()
 {
 	Super.InitEffects();
@@ -188,7 +256,6 @@ defaultproperties
      bInstantRotation=True
      bInstantFire=True
      bShowChargingBar=True
-     bDoOffsetTrace=True
      RedSkin=Texture'IllyTemplar_and_HospitalerSkins.both.Hospi_Templar_Turrets'
      BlueSkin=Texture'IllyTemplar_and_HospitalerSkins.both.Hospi_Templar_Turrets'
      FireInterval=0.750000

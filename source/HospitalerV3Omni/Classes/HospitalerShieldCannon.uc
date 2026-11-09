@@ -117,6 +117,31 @@ function byte BestMode()
 	}
 }
 
+// Stock ONSWeapon.CanAttack (projectile, partial path only since others may move out of the way), with the
+// friendly-in-the-way trace run from the vehicle (Base): our shock balls fly through their own hull, so bots
+// shouldn't treat it as a teammate blocking the shot.
+function bool CanAttack(Actor Other)
+{
+	local Vector HitLocation, HitNormal;
+	local Actor HitActor, Tracer;
+
+	if (Instigator == None || Instigator.Controller == None || VSize(Instigator.Location - Other.Location) > MaxRange()
+		|| !Instigator.Controller.LineOfSightTo(Other))
+		return false;
+
+	CalcWeaponFire();
+	Tracer = Base;
+	if (Tracer == None)
+		Tracer = self;
+	HitActor = Tracer.Trace(HitLocation, HitNormal,
+		WeaponFireLocation + FMin(FMax(0.5 * ProjectileClass.default.Speed, 300), VSize(Other.Location - Location))
+			* Normal(Other.Location + Other.CollisionHeight * vect(0,0,0.8) - Location),
+		WeaponFireLocation, true);
+
+	return HitActor == None || HitActor == Other || Pawn(HitActor) == None || Pawn(HitActor).Controller == None
+		|| !Instigator.Controller.SameTeamAs(Pawn(HitActor).Controller);
+}
+
 function ShieldAgainstIncoming(optional Projectile P)
 {
 	if ( P != None )
@@ -486,8 +511,9 @@ defaultproperties
      PitchBone="SIDEgunBARREL"
      PitchUpLimit=18000
      PitchDownLimit=58000
+     // Firepoint is already the barrel tip (stock ONSPRVSideGun uses no offset). Shock balls fly through their own hull,
+     // and the shield shell sits ~350-500uu ahead of SIDEgunBARREL, so shots from the tip still trigger the shield combo.
      WeaponFireAttachmentBone="Firepoint"
-     WeaponFireOffset=280
      RotationsPerSecond=0.500000
      bShowChargingBar=True
      RedSkin=Texture'IllyHeavyCrusaderSkins.HeavyCrusader.HeavyCrusader_0'

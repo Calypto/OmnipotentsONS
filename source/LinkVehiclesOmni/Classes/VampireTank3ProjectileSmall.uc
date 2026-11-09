@@ -11,11 +11,14 @@ var Link3_PurplePlasma   Plasma;
 var float                       VehicleDamageMult;
 var float LinkMultiplier;
 var int                         Links;
+var Actor Hull; // the firing vehicle, kept in our Owner chain so we fly through it
 
 replication
 {
     unreliable if (bNetInitial && Role == ROLE_Authority)
         Links;
+    reliable if (bNetInitial && Role == ROLE_Authority)
+        Hull;
 }
 
 simulated function Destroyed()
@@ -32,6 +35,15 @@ simulated function PostBeginPlay()
 
     Dir = Vector(Rotation);
     super.PostBeginPlay();
+
+    // Server: Owner is the firing turret gun (clients have none yet). Native line checks, projectile movement
+    // included, skip every actor in the mover's Owner chain, so owning the bolt by the gun's vehicle lets it
+    // pass through its own hull at no per-tick cost.
+    if (Owner != None && Owner.Base != None)
+    {
+        Hull = Owner.Base;
+        SetOwner(Hull);
+    }
 
     if ( Level.NetMode != NM_DedicatedServer )
         Plasma = Spawn(class'Link3_PurplePlasma', Self,, Location - 50*Dir, Rotation);
@@ -64,6 +76,10 @@ simulated function LinkAdjust()
 
 simulated function PostNetBeginPlay()
 {
+    // Clients: Owner only replicates to the owning connection, so join the hull to our Owner chain locally
+    if (Hull != None && Owner != Hull)
+        SetOwner(Hull);
+
     Acceleration     = Velocity;
 
     if ( Role < ROLE_Authority )

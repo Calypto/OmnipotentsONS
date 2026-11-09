@@ -92,6 +92,34 @@ simulated function PostNetBeginPlay()
 
 
 // ============================================================================
+// CanAttack
+// Stock ONSWeapon.CanAttack (projectile, partial path only since others may move out of the way), with the
+// friendly-in-the-way trace run from the vehicle (Base): plasma bolts and the beam pass through their own
+// hull, so bots shouldn't treat it as a teammate blocking the shot.
+// ============================================================================
+function bool CanAttack(Actor Other)
+{
+	local Vector HitLocation, HitNormal;
+	local Actor HitActor, Tracer;
+
+	if (Instigator == None || Instigator.Controller == None || VSize(Instigator.Location - Other.Location) > MaxRange()
+		|| !Instigator.Controller.LineOfSightTo(Other))
+		return false;
+
+	CalcWeaponFire();
+	Tracer = Base;
+	if (Tracer == None)
+		Tracer = self;
+	HitActor = Tracer.Trace(HitLocation, HitNormal,
+		WeaponFireLocation + FMin(FMax(0.5 * ProjectileClass.default.Speed, 300), VSize(Other.Location - Location))
+			* Normal(Other.Location + Other.CollisionHeight * vect(0,0,0.8) - Location),
+		WeaponFireLocation, true);
+
+	return HitActor == None || HitActor == Other || Pawn(HitActor) == None || Pawn(HitActor).Controller == None
+		|| !Instigator.Controller.SameTeamAs(Pawn(HitActor).Controller);
+}
+
+// ============================================================================
 // Spawn projectile. Adjust link properties if needed.
 // ============================================================================
 function Projectile SpawnProjectile(class<Projectile> ProjClass, bool bAltFire)
@@ -803,7 +831,8 @@ defaultproperties
      SelfHealMultiplier = 1.0 // not used in hospitaler
      VehicleHealScore=250.0
      RangeExtPerLink=500
-     bDoOffsetTrace=True
+     // No bDoOffsetTrace: plasma bolts are owned by the vehicle and fly through its hull from the muzzle,
+     // and the beam traces from the vehicle (BeamTrace)
      ShieldPassDamageScale=0.500000
 }
 

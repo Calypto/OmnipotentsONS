@@ -483,13 +483,16 @@ simulated function ApplyDamage(vector HitLocation, vector VDiff, bool bPenetrate
 		}
 	}
 
-	if (LastTouched != None) {
+	// Like the foreach above, only damage actors this machine is authoritative for. Clients run this too, and
+	// non-simulated functions still execute on autonomous proxies (the local player's own pawn/vehicle), so
+	// e.g. Vehicle.TakeDamage() would run client-side and access Level.Game, which is None on clients.
+	if (LastTouched != None && LastTouched.Role == ROLE_Authority) {
 		VictimInfo.HL = TouchLocation;
 		VictimInfo.HN = TouchNormal;
 		VictimInfo.Actor = LastTouched;
 		Victims[Victims.Length] = VictimInfo;
 	}
-	if (HurtWall != None) {
+	if (HurtWall != None && HurtWall.Role == ROLE_Authority) {
 		VictimInfo.HL = WallLocation;
 		VictimInfo.HN = WallNormal;
 		VictimInfo.Actor = HurtWall;

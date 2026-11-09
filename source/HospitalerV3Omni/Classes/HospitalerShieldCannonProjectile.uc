@@ -4,11 +4,28 @@
 class HospitalerShieldCannonProjectile extends ShockProjectile;
 
 var ONSShockBall ONSShockBallEffect;
+var HospitalerShieldCannon Cannon; // server only: the firing cannon (Owner is switched to its vehicle)
+var Actor Hull;                    // the firing vehicle, kept in our Owner chain so we fly through it
 
+replication
+{
+    reliable if (bNetInitial && Role == ROLE_Authority)
+        Hull;
+}
 
 simulated function PostBeginPlay()
 {
 	Super(Projectile).PostBeginPlay();
+
+    // Server: Owner is the firing cannon (clients have none yet). Native line checks, projectile movement
+    // included, skip every actor in the mover's Owner chain, so owning the ball by the gun's vehicle lets it
+    // pass through its own hull at no per-tick cost.
+    if (Owner != None && Owner.Base != None)
+    {
+        Cannon = HospitalerShieldCannon(Owner);
+        Hull = Owner.Base;
+        SetOwner(Hull);
+    }
 
     if ( Level.NetMode != NM_DedicatedServer )
 	{
@@ -19,6 +36,15 @@ simulated function PostBeginPlay()
 	Velocity = Speed * Vector(Rotation); // starts off slower so combo can be done closer
 
     tempStartLoc = Location;
+}
+
+simulated function PostNetBeginPlay()
+{
+    Super.PostNetBeginPlay();
+
+    // Clients: Owner only replicates to the owning connection, so join the hull to our Owner chain locally
+    if (Hull != None && Owner != Hull)
+        SetOwner(Hull);
 }
 
 simulated function Destroyed()
@@ -42,7 +68,7 @@ simulated function DestroyTrails()
 
 simulated function ProcessTouch (Actor Other, vector HitLocation)
 {
-    if (Owner != None && HospitalerShieldCannon(Owner) != None && Other == HospitalerShieldCannon(Owner).ShockShield)
+    if (Cannon != None && Other == Cannon.ShockShield)
         ProximityExplode();
     else
         Super.ProcessTouch(Other, HitLocation);
@@ -52,7 +78,7 @@ simulated singular function HitWall(vector HitNormal, actor Wall)
 {
 	local PlayerController PC;
 
-    if (Owner != None && HospitalerShieldCannon(Owner) != None && Wall == HospitalerShieldCannon(Owner).ShockShield)
+    if (Cannon != None && Wall == Cannon.ShockShield)
         ProximityExplode();
     else
     {
@@ -96,7 +122,7 @@ function ProximityExplode()
 {
 //	 log(self@"ProximityExplode Called");
     PlaySound(ComboSound, SLOT_None,1.0,,800);
-    HospitalerShieldCannon(Owner).ProximityExplosion();
+    Cannon.ProximityExplosion();
     Destroy();
 }
 

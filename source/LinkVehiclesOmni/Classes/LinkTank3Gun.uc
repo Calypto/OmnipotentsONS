@@ -801,14 +801,20 @@ function bool IsLinkable(Actor Other)
 // Beam trace that passes through active teammate Bastion/Fanatic/Hospitaler shields.
 // DamageScale is multiplied by ShieldPassDamageScale per shield passed.
 // Shields matched by name: no dependency on ShieldVehiclesOmni or HospitalerV3Omni.
+// Tracer: the actor the traces run from (default Gun). Native line checks skip their source actor and its
+// Owner chain, so turret guns pass their Base (the vehicle they're bone-attached to, replicated to every
+// client) to ignore their own hull. Driver guns don't need it: their Owner is already the vehicle.
 // ============================================================================
-simulated static function Actor BeamTrace(ONSWeapon Gun, out Vector HitLocation, out Vector HitNormal, Vector End, Vector Start, out float DamageScale)
+simulated static function Actor BeamTrace(ONSWeapon Gun, out Vector HitLocation, out Vector HitNormal, Vector End, Vector Start, out float DamageScale, optional Actor Tracer)
 {
 	local Actor Other, Skipped[4];
 	local int i, n;
 
+	if (Tracer == None)
+		Tracer = Gun;
+
 	DamageScale = 1.0;
-	Other = Gun.Trace(HitLocation, HitNormal, End, Start, true);
+	Other = Tracer.Trace(HitLocation, HitNormal, End, Start, true);
 	while ( Other != None && n < ArrayCount(Skipped) && ONSWeapon(Other.Owner) != None
 		&& ONSWeapon(Other.Owner).Team == Gun.Team
 		&& (Other.IsA('BastionShield') || Other.IsA('FanaticShield') || Other.IsA('HospitalerShield')) )
@@ -817,7 +823,7 @@ simulated static function Actor BeamTrace(ONSWeapon Gun, out Vector HitLocation,
 		Skipped[n] = Other;
 		n++;
 		DamageScale *= default.ShieldPassDamageScale;
-		Other = Gun.Trace(HitLocation, HitNormal, End, HitLocation, true);
+		Other = Tracer.Trace(HitLocation, HitNormal, End, HitLocation, true);
 	}
 
 	for (i = 0; i < n; i++)

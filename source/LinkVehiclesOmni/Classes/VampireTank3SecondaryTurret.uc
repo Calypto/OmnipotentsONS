@@ -88,7 +88,35 @@ simulated function PostNetBeginPlay()
 	
 	Super.PostNetBeginPlay();
 }
- 
+
+// ============================================================================
+// CanAttack
+// Stock ONSWeapon.CanAttack (projectile, partial path only since others may move out of the way), with the
+// friendly-in-the-way trace run from the tank (Base): plasma bolts and the beam pass through their own
+// hull, so bots shouldn't treat it as a teammate blocking the shot.
+// ============================================================================
+function bool CanAttack(Actor Other)
+{
+	local Vector HitLocation, HitNormal;
+	local Actor HitActor, Tracer;
+
+	if (Instigator == None || Instigator.Controller == None || VSize(Instigator.Location - Other.Location) > MaxRange()
+		|| !Instigator.Controller.LineOfSightTo(Other))
+		return false;
+
+	CalcWeaponFire();
+	Tracer = Base;
+	if (Tracer == None)
+		Tracer = self;
+	HitActor = Tracer.Trace(HitLocation, HitNormal,
+		WeaponFireLocation + FMin(FMax(0.5 * ProjectileClass.default.Speed, 300), VSize(Other.Location - Location))
+			* Normal(Other.Location + Other.CollisionHeight * vect(0,0,0.8) - Location),
+		WeaponFireLocation, true);
+
+	return HitActor == None || HitActor == Other || Pawn(HitActor) == None || Pawn(HitActor).Controller == None
+		|| !Instigator.Controller.SameTeamAs(Pawn(HitActor).Controller);
+}
+
 
 
 
@@ -247,8 +275,15 @@ simulated event Tick(float dt)
 
 	//log(self@"tick beam"@Beam@"uptime"@UpTime@"role"@Role,'KDebug');
 
-	// I don't think ONSWeapon has a tick by default but it's always a good idea to call super when in doubt
-	Super.Tick(dt);
+	// No Super.Tick(): ONSWeapon has no script Tick and Actor.Tick is an empty event.
+
+	// Nothing to maintain without a beam. Covers clients too, which otherwise ran
+	// CalcWeaponFire() and a full BeamTrace() every frame while the turret was idle.
+	if (Beam == None)
+	{
+		bInitAimError = true;
+		return;
+	}
 
 	// We're not a LinkGun, so we don't need this
 	//LinkGun = LinkGun(Weapon);
@@ -256,24 +291,14 @@ simulated event Tick(float dt)
 	// This is easily changed over if I decide I want to recode the Link Badger based off this code
 	//log(Level.TimeSeconds@self@"TICK -- Owner"@Owner@"LinkTank of Owner"@VampireTank3(Owner),'KDebug');
 
-	if (Owner != None) MyVampireTank = VampireTank3(ONSWeaponPawn(Owner).VehicleBase);
-	NumLinks = 0;
-	
-	//  link stacking	
-	if (MyVampireTank != None) {
-		  NumLinks = MyVampireTank.GetLinks();
-  } 
-	
-	
-	  
+	// The gun is bone-attached to its tank; Base replicates to every client (Owner only to the owning one).
+	// Read Links directly: GetLinks() isn't simulated, so clients got 0 and drew the beam without RangeExtPerLink.
+	MyVampireTank = VampireTank3(Base);
+	if (MyVampireTank != None)
+		NumLinks = MyVampireTank.Links;
+
 	//if (Role < ROLE_Authority)
 	//	log(Level.TimeSeconds@self@"TICK -- Role"@Role@"LinkBeam"@Beam,'KDebug');
-
-	// If not firing, restore value of bInitAimError
-	if (Beam == None && Role == ROLE_Authority) 	{
-		bInitAimError = true;
-		return;
-	}
 
 	//if (MyVampireTank != None && MyVampireTank.GetLinks() < 0) 	{
         //log("warning:"@Instigator@"linktank had"@LinkTank.GetLinks()@"links");
@@ -350,7 +375,8 @@ simulated event Tick(float dt)
             EndTrace = StartTrace + TraceRange * X;
         }
 
-        Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
+        // Trace from the tank (Base) so the beam passes through its own hull
+        Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale, Base);
         if ( Other != None && Other != Instigator )
 			     EndEffect = HitLocation;
 		    else
@@ -667,110 +693,16 @@ function bool IsLinkable(Actor Other)
 
 // ============================================================================
 // TraceFire
-// Spawn the beam and all but don't actually do any damage here
+// Only spawns the beam: Tick does the tracing and damage every frame. The stock trace here
+// (with its hull offset trace and driver collision toggle) went unused, so it's gone.
+// Super is skipped, so force the immediate net update stock TraceFire does (otherwise client beams arrive late).
 // ============================================================================
 function TraceFire(Vector Start, Rotator Dir)
 {
-    local Vector X, End, HitLocation, HitNormal, RefNormal;
-    local Actor Other;
-    local ONSWeaponPawn WeaponPawn;
-    local Vehicle VehicleInstigator;
-    //local int Damage;
-    local bool bDoReflect;
-    local int ReflectNum;
-
-    MaxRange();
-
-    if ( bDoOffsetTrace )
-    {
-    	WeaponPawn = ONSWeaponPawn(Owner);
-	    if ( WeaponPawn != None && WeaponPawn.VehicleBase != None )
-    	{
-    		if ( !WeaponPawn.VehicleBase.TraceThisActor(HitLocation, HitNormal, Start, Start + vector(Dir) * (WeaponPawn.VehicleBase.CollisionRadius * 1.5)))
-				Start = HitLocation;
-		}
-		else
-			if ( !Owner.TraceThisActor(HitLocation, HitNormal, Start, Start + vector(Dir) * (Owner.CollisionRadius * 1.5)))
-				Start = HitLocation;
-    }
-
-    ReflectNum = 0;
-    while ( true )
-    {
-        bDoReflect = false;
-        X = Vector(Dir);
-        End = Start + TraceRange * X;
-
-        //skip past vehicle driver
-        VehicleInstigator = Vehicle(Instigator);
-        if ( ReflectNum == 0 && VehicleInstigator != None && VehicleInstigator.Driver != None )
-        {
-        	//log(self@"TraceFire:Skipping Driver...");
-        	VehicleInstigator.Driver.bBlockZeroExtentTraces = false;
-        	Other = Trace(HitLocation, HitNormal, End, Start, true);
-        	VehicleInstigator.Driver.bBlockZeroExtentTraces = true;
-        }
-        else {
-        	//log(self@"TraceFire:Not Driver...");
-        	Other = Trace(HitLocation, HitNormal, End, Start, True);
-        }
-        
-        
-		/* Don't actually do any damage here, just spawn the beam
-        if ( Other != None && (Other != Instigator || ReflectNum > 0) )
-        {
-            if (bReflective && Other.IsA('xPawn') && xPawn(Other).CheckReflect(HitLocation, RefNormal, DamageMin*0.25))
-            {
-                bDoReflect = True;
-                HitNormal = vect(0,0,0);
-            }
-            else if (!Other.bWorldGeometry)
-            {
-                Damage = (DamageMin + Rand(DamageMax - DamageMin));
- 				if ( Vehicle(Other) != None || Pawn(Other) == None )
- 				{
- 					HitCount++;
- 					LastHitLocation = HitLocation;
-					SpawnHitEffects(Other, HitLocation, HitNormal);
-				}
-               	Other.TakeDamage(Damage, Instigator, HitLocation, Momentum*X, DamageType);
-				HitNormal = vect(0,0,0);
-            }
-            else
-            {
-                HitCount++;
-                LastHitLocation = HitLocation;
-                SpawnHitEffects(Other, HitLocation, HitNormal);
-	    }
-        }
-        else
-        {
-            HitLocation = End;
-            HitNormal = Vect(0,0,0);
-            HitCount++;
-            LastHitLocation = HitLocation;
-        }
-        */
-
-        SpawnBeamEffect(Start, Dir, HitLocation, HitNormal, ReflectNum);
-
-        if ( bDoReflect && ++ReflectNum < 4 )
-        {
-            //Log("reflecting off"@Other@Start@HitLocation);
-            Start	= HitLocation;
-            Dir		= Rotator(RefNormal); //Rotator( X - 2.0*RefNormal*(X dot RefNormal) );
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    NetUpdateTime = Level.TimeSeconds - 1;
+	SpawnBeamEffect(Start, Dir, Start, vect(0,0,0), 0);
+	NetUpdateTime = Level.TimeSeconds - 1;
 }
 
-// ============================================================================
-//
 // ============================================================================
 state ProjectileFireMode
 {
