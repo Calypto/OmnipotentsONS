@@ -26,6 +26,7 @@ var float SelfHealMultiplier; // how much it heals itself as draining.
 var config int VehicleHealScore; //  how many healing points of an occupied vehicle = 1pt score for player
 var float RangeExtPerLink; // how much range is extended per linker
 var float LinkMultiplierCap;
+var int LastLinksSent;  // link count last relayed to LockedPawn's link chain
 
 var String MakeLinkForce;
 
@@ -145,6 +146,7 @@ state InstantFireMode
 		local bot B;
 		local bool bShouldStop, bIsHealingObjective;
 		local int AdjustedDamage;
+		local float BeamDamageScale;
 		local LinkScorpion3BeamEffect LB;
 		local DestroyableObjective HealObjective;
 		local Vehicle LinkedVehicle;
@@ -263,7 +265,7 @@ state InstantFireMode
 	            EndTrace = StartTrace + TraceRange * X;
 	        }
 
-	        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+	        Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
 	        if ( Other != None && Other != Instigator )
 				EndEffect = HitLocation;
 			else
@@ -292,6 +294,15 @@ state InstantFireMode
 				*/
 				return;
 			}
+	        // Relay changes in our exported links down an infantry link chain while locked on
+	        if (LockedPawn != None && !bFeedbackDeath && MyLinkScorpion.ExportLinks != LastLinksSent)
+	        {
+	        	RemoveLink(1 + LastLinksSent, Instigator);
+	        	LastLinksSent = MyLinkScorpion.ExportLinks;
+	        	if (!AddLink(1 + LastLinksSent, Instigator))
+	        		bFeedbackDeath = true;
+	        }
+
 	        if ( Other != None && Other != Instigator )
 	        {
 	            // target can be linked to
@@ -342,6 +353,7 @@ state InstantFireMode
 									//LinkGun.ConsumeAmmo(ThisModeNum, -AmmoPerFire);
 							}
 							else {
+								AdjustedDamage *= BeamDamageScale;
 								Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, Momentum*X, DamageType);
 								// heal itself
 								 if (MyLinkScorpion!=None&&MyLinkScorpion.Health<MyLinkScorpion.HealthMax&&
@@ -459,7 +471,8 @@ function SetLinkTo(Pawn Other)
 {
     if (LockedPawn != None && MyLinkScorpion != None)
     {
-        RemoveLink(1 + MyLinkScorpion.Links, Instigator);
+        RemoveLink(1 + LastLinksSent, Instigator);
+        bFeedbackDeath = false;
         MyLinkScorpion.bLinking = false;
     }
 
@@ -467,7 +480,8 @@ function SetLinkTo(Pawn Other)
 
     if (LockedPawn != None)
     {
-        if (!AddLink(1 + MyLinkScorpion.Links, Instigator))
+        LastLinksSent = MyLinkScorpion.ExportLinks;
+        if (!AddLink(1 + LastLinksSent, Instigator))
         {
             bFeedbackDeath = true;
         }

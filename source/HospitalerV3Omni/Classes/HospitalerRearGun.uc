@@ -175,7 +175,7 @@ state InstantFireMode
 defaultproperties
 {
      BeamEffectClass=Class'Onslaught.ONSChargeBeamEffect'
-     MaxHoldTime=2.500000
+     MaxHoldTime=2.250000
      MinDamageScale=0.150000
      ChargingSound=Sound'ONSVehicleSounds-S.PRV.PRVChargeUp'
      ChargedLoop=Sound'ONSVehicleSounds-S.PRV.PRVChargeLoop'

@@ -15,6 +15,7 @@ var     float   CurrentRechargeTime;
 var     bool    bShieldActive, bLastShieldActive;
 var		bool	bPutShieldUp;
 var     byte    ShieldHitCount, LastShieldHitCount;
+var     byte    ShieldOpacity, LastShieldOpacity; // shield effect opacity * 255 (0.3 floor applied), replicated to all clients
 
 var     HospitalerShield   ShockShield;
 
@@ -38,8 +39,8 @@ replication
     reliable if (bNetOwner && Role == ROLE_Authority)
         CurrentShieldHealth;
 
-    reliable if (Role == ROLE_Authority)
-        bShieldActive, ShieldHitCount;
+    reliable if (bNetDirty && Role == ROLE_Authority)
+        bShieldActive, ShieldHitCount, ShieldOpacity;
 }
 
 simulated function PostNetBeginPlay()
@@ -49,7 +50,21 @@ simulated function PostNetBeginPlay()
     ShockShield = spawn(class'HospitalerShield', self);
 
     if (ShockShield != None)
+    {
         AttachToBone(ShockShield, 'SIDEgunBARREL');
+
+        // UPSTREAM: workaround for a stock bug (also in ONSShockTankCannon). On clients the engine
+        // calls PostNetReceive() before PostNetBeginPlay() for the first bunch (UnChan.cpp), so shield
+        // state that arrived with it (late join, vehicle coming back into relevancy) found no
+        // ShockShield. If the engine is changed to call PostNetBeginPlay() first, ActivateShield()
+        // here becomes redundant but harmless; keep the hit-count sync either way.
+        if (Role < ROLE_Authority)
+        {
+            LastShieldHitCount = ShieldHitCount; // don't flash for hits from before we got here
+            if (bShieldActive)
+                ActivateShield();
+        }
+    }
 }
 
 function byte BestMode()
@@ -210,8 +225,27 @@ simulated function ActivateShield()
     bShieldActive = true;
 
     if (ShockShield != None)
-        ShockShield.ActivateShield(Instigator.Controller.GetTeamNum());
+    {
+        if (Role == ROLE_Authority)
+            ShieldOpacity = FMax(CurrentShieldHealth / MaxShieldHealth, 0.3) * 255;
+        // Team is replicated to everyone; Instigator.Controller is None on non-owning clients
+        ShockShield.ActivateShield(Team);
         ScaleShieldStrengthEffect();
+    }
+}
+
+// Server: requantize opacity after CurrentShieldHealth changes while the shield is up
+function UpdateShieldOpacity()
+{
+    local byte NewOpacity;
+
+    NewOpacity = FMax(CurrentShieldHealth / MaxShieldHealth, 0.3) * 255;
+    if (NewOpacity != ShieldOpacity) // only assign on change so bNetDirty isn't set needlessly
+    {
+        ShieldOpacity = NewOpacity;
+        if (Level.NetMode != NM_DedicatedServer) // listen host's own view
+            ScaleShieldStrengthEffect();
+    }
 }
 
 simulated function ScaleShieldStrengthEffect() 
@@ -232,7 +266,7 @@ simulated function ScaleShieldStrengthEffect()
     // ShockShield.ShockShieldEffect.LightHue =(CurrentShieldHealth/MaxShieldHealth)*192 + 64;
      //ShockShield.ShockShieldEffect.LightBrightness =(CurrentShieldHealth/MaxShieldHealth)*192 + 64;
      //ShockShield.ShockShieldEffect.AmbientGlow =(CurrentShieldHealth/MaxShieldHealth)*254;
-     if (ShockShield.ShockShieldEffect!=None) ShockShield.ShockShieldEffect.Emitters[0].Opacity=FMax(0.3,(CurrentShieldHealth/MaxShieldHealth)*1);
+     if (ShockShield.ShockShieldEffect!=None) ShockShield.ShockShieldEffect.Emitters[0].Opacity = ShieldOpacity / 255.0;
 }
 
 simulated function DeactivateShield()
@@ -281,10 +315,13 @@ simulated function PostNetReceive()
 
         bLastShieldActive = bShieldActive;
     }
+    else if (ShieldOpacity != LastShieldOpacity && bShieldActive && ShockShield != None)
+        ScaleShieldStrengthEffect();
+    LastShieldOpacity = ShieldOpacity;
 
     if (ShockShield != None && ShieldHitCount != LastShieldHitCount)
     {
-        ShockShield.SpawnHitEffect(Instigator.Controller.GetTeamNum());
+        ShockShield.SpawnHitEffect(Team);
 
         LastShieldHitCount = ShieldHitCount;
     }
@@ -334,7 +371,7 @@ function NotifyShieldHit(int Dam, Pawn instigatedBy)
        CurrentShieldHealth -= Dam;
        ShieldHitCount++;
        ShockShield.SpawnHitEffect(Team);
-       ScaleShieldStrengthEffect();
+       UpdateShieldOpacity();
     }
 }
 
@@ -342,27 +379,31 @@ simulated function Tick(float DT)
 {
     Super.Tick(DT);
 
-		
-		
-    if (Owner != None && HospitalerV3Omni(ONSWeaponPawn(Owner).VehicleBase) != None)
-			NumLinks = HospitalerV3Omni(ONSWeaponPawn(Owner).VehicleBase).Links;
-	  else
-		  NumLinks = 0;
-
     if (ShockShield == None || Role < ROLE_Authority)
         return;
+
+    // NumLinks is only used on the server (shield recharge below, combo heal in HurtRadius)
+    NumLinks = 0;
+    if (Owner != None)
+    {
+        MyHospitaler = HospitalerV3Omni(ONSWeaponPawn(Owner).VehicleBase);
+        if (MyHospitaler != None)
+            NumLinks = MyHospitaler.Links;
+    }
 
     if (CurrentShieldHealth <= 0)                        // Ran out of shield energy so deactivate
         DeactivateShield();
 
-    if (bShieldActive && (CurrentShieldHealth < MaxShieldHealth))  // Shield is on and needs recharge
-    // only recharge while up if Hospitaler is being linkend
+    if (bShieldActive)
     {
-       CurrentShieldHealth += (ShieldRechargeRateActive * ((NumLinks*LinkMultiplier))) * DT;
-       //if num links is 0, then no recharging while shield is up.
-       if (CurrentShieldHealth >= MaxShieldHealth) CurrentShieldHealth = MaxShieldHealth;
+        // Shield is on: only recharge while up if Hospitaler is being linked
+        if (NumLinks > 0 && CurrentShieldHealth < MaxShieldHealth)
+        {
+            CurrentShieldHealth = FMin(CurrentShieldHealth + ShieldRechargeRateActive * NumLinks * LinkMultiplier * DT, MaxShieldHealth);
+            UpdateShieldOpacity();
+        }
     }
-    else if (!bShieldActive && (CurrentShieldHealth < MaxShieldHealth))  // Shield is off and needs recharge
+    else if (CurrentShieldHealth < MaxShieldHealth)  // Shield is off and needs recharge
     {
         if (CurrentDelayTime < MaxDelayTime)           // Shield is in delay
             CurrentDelayTime += DT;

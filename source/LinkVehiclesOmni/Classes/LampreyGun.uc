@@ -28,6 +28,7 @@ var float ComboSelfHealMultiplier;
 var float VehicleDamageMult;
 var config int VehicleHealScore;
 var float RangeExtPerLink; // how much range is extended per linker
+var int LastLinksSent;  // link count last relayed to LockedPawn's link chain
 
 var		bool bDoHit;
 var()	bool bFeedbackDeath;
@@ -146,6 +147,7 @@ simulated function tick(float dt)
 		local bot B;
 		local bool bShouldStop, bIsHealingObjective;
 		local int AdjustedDamage;
+		local float BeamDamageScale;
 		local LampreyBeamEffect LB;
 		local DestroyableObjective HealObjective;
 		local Vehicle LinkedVehicle;
@@ -211,7 +213,7 @@ simulated function tick(float dt)
 	       EndTrace = StartTrace + TraceRange * X;
 	    }
 
-	    Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+	    Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
 	    if ( Other != None && Other != Instigator )
 				EndEffect = HitLocation;
 			else
@@ -240,6 +242,15 @@ simulated function tick(float dt)
 				*/
 				return;
 			}
+	    // Relay changes in our exported links down an infantry link chain while locked on
+	    if (LockedPawn != None && !bFeedbackDeath && MyLamprey.ExportLinks != LastLinksSent)
+	    {
+	    	RemoveLink(1 + LastLinksSent, Instigator);
+	    	LastLinksSent = MyLamprey.ExportLinks;
+	    	if (!AddLink(1 + LastLinksSent, Instigator))
+	    		bFeedbackDeath = true;
+	    }
+
 	    if ( Other != None && Other != Instigator )    {
 	            // target can be linked to
 	        if ( IsLinkable(Other) )  {
@@ -284,6 +295,7 @@ simulated function tick(float dt)
 													//LinkGun.ConsumeAmmo(ThisModeNum, -AmmoPerFire);
 											}
 											else {
+												AdjustedDamage *= BeamDamageScale;
 												Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, Momentum*X, DamageType);
 												// heal itself
 												// Error here? Warning: LampreyGun ONS-Dria-Randomizer-V22.LampreyGun (Function LinkVehiclesOmni.LampreyGun.InstantFireMode.Tick:0672) Accessed None 'LockedPawn'
@@ -418,6 +430,7 @@ function Fire(Controller C)
 		local vector	dir, StartLocation;
 		local Actor		Victims;
 		local Pawn VictimPawn;
+		local int InstigatorTeam;
 
 		NetUpdateTime = Level.TimeSeconds - 1;
 		//bFireMode = true;
@@ -428,7 +441,8 @@ function Fire(Controller C)
 
 		Shock = Spawn(class'LampreyLightiningShockWave', Self,, StartLocation);
 		
-		if (Instigator.GetTeamNum()==0) {
+		InstigatorTeam = Instigator.GetTeamNum();
+		if (InstigatorTeam==0) {
 			//Red
 			 Shock.Emitters[1].ColorScale[0].Color = class'Canvas'.static.MakeColor( 204,0, 0);
        Shock.Emitters[1].ColorScale[1].Color = class'Canvas'.static.MakeColor( 204,0, 0);
@@ -473,10 +487,11 @@ foreach VisibleCollidingActors( class'Actor', Victims, AltFireRadius, StartLocat
 				
 					VictimPawn = Pawn(Victims);
 				
-				//log("VictimPawn:"@ "Victim Team:" @ VictimPawn.Controller.GetTeamNum() @ "Instigator Team:" @ Instigator.GetTeamNum()  );
-					if (VictimPawn != None && VictimPawn.Controller != None 
-			   		 && VictimPawn.Controller.GetTeamNum() != Instigator.GetTeamNum()  // spare your team
-				 		&& (Victims.Role == ROLE_Authority) )
+				//log("VictimPawn:"@ "Victim Team:" @ VictimPawn.GetTeamNum() @ "Instigator Team:" @ InstigatorTeam  );
+					if (VictimPawn != None && VictimPawn.Health > 0 // skip corpses and vehicle wrecks
+						&& (VictimPawn.Controller != None || (Vehicle(Victims) != None && !Vehicle(Victims).IsVehicleEmpty())) // driverless vehicles still count if they have passengers
+						&& VictimPawn.GetTeamNum() != InstigatorTeam  // spare your team; vehicles report their own Team even without a driver
+						&& (Victims.Role == ROLE_Authority) )
 				 		// only does damage if there's instigators/controllers doesn't affect empty stuff. so no blast against empty vehicles.
 				  { // Handle Vehicles/Infantry (pawns)
 					//log("PawnVictims:" @ Victims.GetHumanReadableName() @ "DistScale:" @ DistScale );
@@ -532,7 +547,8 @@ function SetLinkTo(Pawn Other)
 {
     if (LockedPawn != None && MyLamprey != None)
     {
-        RemoveLink(1 + MyLamprey.Links, Instigator);
+        RemoveLink(1 + LastLinksSent, Instigator);
+        bFeedbackDeath = false;
         MyLamprey.bLinking = false;
     }
 
@@ -540,7 +556,8 @@ function SetLinkTo(Pawn Other)
 
     if (LockedPawn != None)
     {
-        if (!AddLink(1 + MyLamprey.Links, Instigator))
+        LastLinksSent = MyLamprey.ExportLinks;
+        if (!AddLink(1 + LastLinksSent, Instigator))
         {
             bFeedbackDeath = true;
         }

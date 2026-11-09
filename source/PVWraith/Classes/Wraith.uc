@@ -37,6 +37,8 @@ Skip Cicada logic - no lock-on.
 simulated function DrawHUD(Canvas C)
 {
 	local HudCDeathmatch H;
+	local WraithSideGun SideGun;
+	local ONSWeaponPawn Gunner;
 	local float XL, YL, PosY;
 	local string CoPilot;
 
@@ -46,16 +48,25 @@ simulated function DrawHUD(Canvas C)
 	if (H == None)
 		return;
 
-	HudMissileCount.Tints[0] = H.HudColorRed;
-	HudMissileCount.Tints[1] = H.HudColorBlue;
+	// Client-side, Weapons is only filled for the driver via ClientRegisterVehicleWeapon(),
+	// so it's empty for spectators viewing the driver and until that registration arrives.
+	if (Weapons.Length != 0)
+		SideGun = WraithSideGun(Weapons[0]);
+	if (SideGun != None) {
+		HudMissileCount.Tints[0] = H.HudColorRed;
+		HudMissileCount.Tints[1] = H.HudColorBlue;
 
-	H.DrawSpriteWidget(C, HudMissileCount);
-	H.DrawSpriteWidget(C, HudMissileIcon);
-	HudMissileDigits.Value = WraithSideGun(Weapons[0]).RemainingShotCount;
-	H.DrawNumericWidget(C, HudMissileDigits, DigitsBig);
+		H.DrawSpriteWidget(C, HudMissileCount);
+		H.DrawSpriteWidget(C, HudMissileIcon);
+		HudMissileDigits.Value = SideGun.RemainingShotCount;
+		H.DrawNumericWidget(C, HudMissileDigits, DigitsBig);
+	}
 
-	if (WeaponPawns[0] != None && WeaponPawns[0].PlayerReplicationInfo != None) {
-		CoPilot = WeaponPawns[0].PlayerReplicationInfo.PlayerName;
+	// Client-side, WeaponPawns is built by ONSWeaponPawn.PostNetReceive(), so it may be empty or hold None.
+	if (WeaponPawns.Length != 0)
+		Gunner = WeaponPawns[0];
+	if (Gunner != None && Gunner.PlayerReplicationInfo != None) {
+		CoPilot = Gunner.PlayerReplicationInfo.PlayerName;
 		C.Font = H.GetMediumFontFor(C);
 		C.Strlen(CoPilot, XL, YL);
 		PosY = C.ClipY * 0.7;

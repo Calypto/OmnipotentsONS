@@ -5,6 +5,8 @@ class LinkTank3HeavyBeamEffect extends LinkBeamEffect
 	notplaceable;
 
 var ONSWeapon WeaponOwner;
+var byte SizedLinks;	// Links value the current width was set for
+var float SizedWidth;	// width SetBeamSize last set; the stock Tick resets it when links, link color or muzzle flash change
 
 replication
 {
@@ -77,6 +79,22 @@ simulated function  SetBeamSize(int NumLinks)
 {
 	mSizeRange[0] = default.mSizeRange[0] * (NumLinks*0.6 + 1);
 	mWaveShift = default.mWaveShift * (NumLinks*0.6 + 1);
+}
+
+// Size the beam from its replicated Links on every client, so other players see the same
+// width as the driver. Re-applied after the stock Tick, which resets the width to LinkFire's
+// curve whenever links, link color or the muzzle flash change. Width isn't replicated, so a
+// dedicated server skips it.
+simulated function Tick(float dt)
+{
+	Super.Tick(dt);
+
+	if (Level.NetMode != NM_DedicatedServer && (Links != SizedLinks || mSizeRange[0] != SizedWidth))
+	{
+		SetBeamSize(Links);
+		SizedLinks = Links;
+		SizedWidth = mSizeRange[0];
+	}
 }
 
 

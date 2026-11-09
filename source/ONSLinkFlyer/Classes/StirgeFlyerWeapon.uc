@@ -51,6 +51,7 @@ var() float SelfHealMultiplier;
 
 var float LinkMultiplier;  // linkers increase factor
 var config int VehicleHealScore; // how much occupied vehicle healing = 1pt player score
+var int LastLinksSent;  // link count last relayed to LockedPawn's link chain
 
 // ============================================================================
 // Replication
@@ -202,6 +203,7 @@ simulated event Tick(float dt)
     local StirgeFlyer LinkFlyer;
     local bool bIsHealingObjective;
     local int AdjustedDamage, NumLinks;
+    local float BeamDamageScale;
     local DestroyableObjective HealObjective;
     local Vehicle LinkedVehicle;
     local LinkBeamEffect Beam;
@@ -279,7 +281,7 @@ simulated event Tick(float dt)
             EndTrace=StartTrace+TraceRange * X;
             }
 
-        Other=Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+        Other=class'LinkFlyerWeapon'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
         if (Other!=None && Other!=Instigator)
             EndEffect=HitLocation;
         else
@@ -291,6 +293,15 @@ simulated event Tick(float dt)
         if (Role<ROLE_Authority)
             {
             return;
+            }
+
+        // Relay changes in our exported links down an infantry link chain while locked on
+        if (LockedPawn!=None && !bFeedbackDeath && LinkFlyer!=None && LinkFlyer.ExportLinks!=LastLinksSent)
+            {
+            RemoveLink(1+LastLinksSent, Instigator);
+            LastLinksSent=LinkFlyer.ExportLinks;
+            if (!AddLink(1+LastLinksSent, Instigator))
+                bFeedbackDeath=true;
             }
 
         if (Other!=None && Other!=Instigator)
@@ -351,6 +362,7 @@ simulated event Tick(float dt)
                                 warn(self@"called takedamage with a linked pawn!!!");
                             else
                                 {
+                                AdjustedDamage*=BeamDamageScale;
                                 // LinkFlyer only allows vampire on occupied vehicles or team unlocked ones
                                 //OtherVehicle=Vehicle(Other);
                                 //if (OtherVehicle!=None&&(OtherVehicle.Occupied()||!OtherVehicle.bTeamLocked))
@@ -440,7 +452,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
         {
         if (LockedPawn!=None && StirgeFlyer(Owner)!=None)
             {
-            RemoveLink(1+StirgeFlyer(Owner).GetLinks(), Instigator);
+            RemoveLink(1+LastLinksSent, Instigator);
+            bFeedbackDeath=false;
 
             // Added flag so the vehihicle doesn't flash from green to teamcolor rapidly while linking a non-Wormbo node
             if (!bHealing)
@@ -453,7 +466,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
             {
             if (StirgeFlyer(Owner)!=None)
                 {
-                if (!AddLink(1+StirgeFlyer(Owner).GetLinks(), Instigator))
+                LastLinksSent=StirgeFlyer(Owner).ExportLinks;
+                if (!AddLink(1+LastLinksSent, Instigator))
                     {
                     bFeedbackDeath=true;
                     }

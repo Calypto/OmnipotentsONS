@@ -10,6 +10,7 @@ var(Stealth) Float MinVelocityForInvis;		// Minimum velocity to consider the veh
 var(Stealth) Float FireVisibleTime;			// How long after firing to stay visible
 var(Stealth) Sound CloakSound;				// Sound played when cloaking
 var(Stealth) Sound UnCloakSound;			// Sound played when decloaking
+var(Stealth) Float StealthCheckInterval;	// How often (seconds) the cloak state is re-checked while occupied
 
 // Internal vars
 var bool bInvisible;
@@ -44,6 +45,7 @@ function SetInvisibility(bool bInvis)
 			PlaySound(CloakSound);
 			SoundVolume = 32;
 			Skins[0] = InvisibleMaterial;
+			WeaponPawns[0].Visibility = 0;
 			WeaponPawns[0].Gun.Skins[0] = InvisibleMaterial;
 			Weapons[0].Skins[0] = InvisibleMaterial;
 			Weapons[0].RepSkin = InvisibleMaterial;
@@ -52,6 +54,7 @@ function SetInvisibility(bool bInvis)
 		else
 		{
 			Visibility = default.Visibility;
+			WeaponPawns[0].Visibility = WeaponPawns[0].default.Visibility;
 //			AmbientSound = IdleSound;
 			SoundVolume = 255;
 			PlaySound(UncloakSound);
@@ -101,25 +104,32 @@ simulated event PostNetReceive()
 	}
 }
 
-// KDriverLeave
-// Turn visible again if driver leaves.
-function bool KDriverLeave(bool bForceLeave)
+// KDriverEnter
+// Driver seat taken: start the stealth checks.
+function KDriverEnter(Pawn P)
 {
-	if (Super.KDriverLeave(bForceLeave))
-	{
-		SetInvisibility(false);
-		return true;
-	}
-	else
-		return false;
+	Super.KDriverEnter(P);
+	OccupantEntered();
 }
 
-// DriverDied
-// Turn visible again if driver dies.
-function DriverDied()
+// OccupantEntered
+// Called when someone takes the driver seat or the gunner seat (StealthBadgerTurretPawn).
+// Starts the stealth checks and updates the cloak right away.
+function OccupantEntered()
 {
-	SetInvisibility(false);
-	Super.DriverDied();
+	SetTimer(StealthCheckInterval, true);
+	Timer();
+}
+
+// Died
+// Stop the stealth checks and turn visible again when the vehicle is destroyed.
+// Must happen before Super: ONSVehicle.Died empties WeaponPawns.
+function Died(Controller Killer, class<DamageType> damageType, vector HitLocation)
+{
+	SetTimer(0.0, false);
+	if (bInvisible)
+		SetInvisibility(false);
+	Super.Died(Killer, damageType, HitLocation);
 }
 
 // WeaponFired
@@ -131,24 +141,32 @@ function WeaponFired()
 		SetInvisibility(false);
 }
 
-// Tick
-// Update visibility depending on whether vehicle is moving or not.
-event Tick(float Delta)
+// Timer
+// Update visibility while anyone is in either seat. A Timer is used rather than Tick:
+// Vehicle disables Tick whenever the driver seat is empty (DrivingStatusChanged), so a
+// Tick never runs with only a gunner inside, and this doesn't need to run every frame.
+event Timer()
 {
-	Super.Tick(Delta);
+	local bool bInvis;
 
-	// Never become invisible if we have no driver
-	if (Role < ROLE_Authority || Driver == None)
+	// Nobody in either seat: uncloak and stop checking until someone gets in.
+	// Done here rather than on exit because a seat switch empties the old seat
+	// before filling the new one, which would uncloak and re-cloak.
+	if (Driver == None && WeaponPawns[0].Driver == None)
+	{
+		SetTimer(0.0, false);
+		if (bInvisible)
+			SetInvisibility(false);
 		return;
+	}
 
 	// Stay visible a set period of time after firing.
 	if (InvisiFireTime > 0 && Level.TimeSeconds - InvisiFireTime < FireVisibleTime)
 		return;
 
-	if (VSize(Velocity) <= MinVelocityForInvis)
-		SetInvisibility(true);
-	else
-		SetInvisibility(false);
+	bInvis = VSize(Velocity) <= MinVelocityForInvis;
+	if (bInvis != bInvisible)
+		SetInvisibility(bInvis);
 }
 
 defaultproperties
@@ -156,6 +174,7 @@ defaultproperties
      InvisibleMaterial=Shader'MoreBadgers.Stealth.InvisiBadger'
      MinVelocityForInvis=999999.000000
      FireVisibleTime=1.000000
+     StealthCheckInterval=0.100000
      CloakSound=Sound'ONSBPSounds.ShockTank.ShieldActivate'
      UnCloakSound=Sound'ONSBPSounds.ShockTank.ShieldOff'
      GearRatios(0)=-1.000000

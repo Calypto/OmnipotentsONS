@@ -8,20 +8,11 @@ class TickScorpion3Omni extends ONSWheeledCraft;  // instead of ONSRV
 #exec obj load file=TickScorpion3Mesh.ukx
 
 var bool Linking;
-var int Links, OldLinks;
-struct HealerStruct
-{
-	var LinkGun LinkGun;
-	var TickScorpion3Omni TickScorpion3Omni;
-	var float LastHealTime; 
-};
-
-var array<HealerStruct> Healers; //the array of people currently healing.
+var int Links;
 
 var ONSWeapon Gun;
 var TickScorpion3Gun TS3Gun;
 
-var float LastTimeLinkLoop;
 var float CurrDrawScale;
 var int intCurrDrawScale;
 
@@ -29,14 +20,9 @@ var() array<Material> TickSkin_Red, TickSkin_Blue;
 var int NewSkin, OldSkin;
 
 // Linker passthrough vars
-struct LinkerStruct
-{
-    var Controller LinkingController;
-    var int NumLinks;
-    var float LastLinkTime;
-};
-const LINKDECAYTIME = 0.250000;
-var array<LinkerStruct> Linkers;
+const LINKDECAYTIME = 0.250000;	// How long after the last teammate heal we keep counting linkers
+var float LastLinkedTime;		// Last time a teammate's link beam healed us
+var int ExportLinks;			// Links our link target is credited with
 var bool bLinking;
 
 replication
@@ -259,63 +245,17 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
 }
 */
 
-// Vehicle chain linking support by Anon
-function int GetHealerLinks(Controller Healer)
-{
-    local string LinkStr;
-
-    if (Healer == None || Healer.Pawn == None)
-        return 0;
-
-    // 1. If healer is in a vehicle (LinkTank, TickScorpion, LinkBadger, etc.)
-    if (Vehicle(Healer.Pawn) != None)
-    {
-        LinkStr = Healer.Pawn.GetPropertyText("Links");
-        if (LinkStr != "")
-            return int(LinkStr);
-    }
-    // 2. If healer is a player holding a LinkGun
-    else if (Healer.Pawn.Weapon != None && LinkGun(Healer.Pawn.Weapon) != None)
-    {
-        return LinkGun(Healer.Pawn.Weapon).Links;
-    }
-
-    return 0;
-}
-
+// Teammates' link beams heal us every fire interval, so a recent heal means
+// someone is linking us and ResetLinks has something to count
 function bool HealDamage(int Amount, Controller Healer, class<DamageType> DamageType)
 {
-    local int i;
-    local bool bFound;
-    local int InboundLinks;
     local bool bHealed;
 
     if (Healer == None || Healer.bDeleteMe)
         return false;
 
-    if (TeamLink(Healer.GetTeamNum()) && Healer != Controller)
-    {
-        InboundLinks = GetHealerLinks(Healer);
-
-        for (i = 0; i < Linkers.Length; i++)
-        {
-            if (Linkers[i].LinkingController != None && Linkers[i].LinkingController == Healer)
-            {
-                bFound = true;
-                Linkers[i].LastLinkTime = Level.TimeSeconds;
-                Linkers[i].NumLinks = InboundLinks;
-                break;
-            }
-        }
-
-        if (!bFound)
-        {
-            Linkers.Insert(0, 1);
-            Linkers[0].LinkingController = Healer;
-            Linkers[0].LastLinkTime = Level.TimeSeconds;
-            Linkers[0].NumLinks = InboundLinks;
-        }
-    }
+    if (Healer != Controller && TeamLink(Healer.GetTeamNum()))
+        LastLinkedTime = Level.TimeSeconds;
 
     bHealed = super.HealDamage(Amount, Healer, DamageType);
 
@@ -326,29 +266,16 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
     return bHealed;
 }
 
+// Recount our linkers from the live link beams
 function ResetLinks()
 {
-    local int i;
-    local int NewLinks;
-
-    i = 0;
-    NewLinks = 0;
-
-    while (i < Linkers.Length)
+    if (Level.TimeSeconds - LastLinkedTime > LINKDECAYTIME)
     {
-        if (Linkers[i].LinkingController == None || Level.TimeSeconds - Linkers[i].LastLinkTime > LINKDECAYTIME)
-        {
-            Linkers.Remove(i, 1);
-        }
-        else
-        {
-            NewLinks += 1 + Linkers[i].NumLinks;
-            i++;
-        }
+        Links = 0;
+        ExportLinks = 0;
     }
-
-    if (Links != NewLinks)
-        Links = NewLinks;
+    else
+        Links = class'LinkChain'.static.CountLinkers(self, ExportLinks);
 }
 
 simulated event Tick(float DT)

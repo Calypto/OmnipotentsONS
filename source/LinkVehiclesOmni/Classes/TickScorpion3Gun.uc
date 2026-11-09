@@ -204,6 +204,7 @@ simulated function ClientStartFire(Controller C, bool bWasAltFire)
 		local bot B;
 		local bool bShouldStop, bIsHealingObjective;
 		local int AdjustedDamage;
+		local float BeamDamageScale;
 		local TickScorpion3BeamEffect LB;
 		local DestroyableObjective HealObjective;
 		local Vehicle LinkedVehicle;
@@ -330,7 +331,7 @@ simulated function ClientStartFire(Controller C, bool bWasAltFire)
 	            EndTrace = StartTrace + TraceRange * X;
 	      } // Locked Pawn None
 
-	        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+	        Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
 	        if ( Other != None && Other != Instigator )
 				EndEffect = HitLocation;
 			else
@@ -360,16 +361,13 @@ simulated function ClientStartFire(Controller C, bool bWasAltFire)
 				return;
 			}
 
-			// Relay link changes down the chain while locked on
-			if (LockedPawn != None && MyTickScorpion.Links != LastLinksSent)
+			// Relay changes in our exported links down an infantry link chain while locked on
+			if (LockedPawn != None && !bFeedbackDeath && MyTickScorpion.ExportLinks != LastLinksSent)
 			{
 				RemoveLink(1 + LastLinksSent, Instigator);
-				LastLinksSent = MyTickScorpion.Links;
+				LastLinksSent = MyTickScorpion.ExportLinks;
 				if (!AddLink(1 + LastLinksSent, Instigator))
-				{
 					bFeedbackDeath = true;
-					return;
-				}
 			}
 
 			if ( Other != None && Other != Instigator )   {
@@ -405,6 +403,7 @@ simulated function ClientStartFire(Controller C, bool bWasAltFire)
 									//LinkGun.ConsumeAmmo(ThisModeNum, -AmmoPerFire);
 													}
 													else {
+															AdjustedDamage *= BeamDamageScale;
 															Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, Momentum*X, DamageType);
 															// heal itself
 								 							if (MyTickScorpion!=None&&MyTickScorpion.Health<MyTickScorpion.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)&&!ONSPowerCore(HealObjective).IsInState('NeutralCore')))
@@ -675,6 +674,7 @@ function SetLinkTo(Pawn Other)
     if (LockedPawn != None && MyTickScorpion != None)
     {
         RemoveLink(1 + LastLinksSent, Instigator);
+        bFeedbackDeath = false;
         MyTickScorpion.bLinking = false;
     }
 
@@ -685,7 +685,7 @@ function SetLinkTo(Pawn Other)
     {
         if (MyTickScorpion != None)
         {
-            LastLinksSent = MyTickScorpion.Links;
+            LastLinksSent = MyTickScorpion.ExportLinks;
             MyTickScorpion.bLinking = true;
         }
 

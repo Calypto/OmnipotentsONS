@@ -11,6 +11,7 @@ var() sound LinkedFireSound;
 function Projectile SpawnProjectile(class<Projectile> ProjClass, bool bAltFire)
 {
 	local Projectile SpawnedProjectile;
+	local PROJ_LinkTurret_Plasma Plasma;
 	local int NumLinks;
 
 	if (ONSWeaponPawn(Owner) != None && LinkTank3Mini(ONSWeaponPawn(Owner).VehicleBase) != None)
@@ -26,11 +27,11 @@ function Projectile SpawnProjectile(class<Projectile> ProjClass, bool bAltFire)
 		FireSoundClass = default.FireSoundClass;
 
 	SpawnedProjectile = Super.SpawnProjectile(ProjClass, bAltFire);
-	if (LinkProjectile(SpawnedProjectile) != None)
+	Plasma = PROJ_LinkTurret_Plasma(SpawnedProjectile);
+	if (Plasma != None)
 	{
-
-		LinkProjectile(SpawnedProjectile).Links = NumLinks;
-		LinkProjectile(SpawnedProjectile).LinkAdjust();
+		Plasma.Links = NumLinks;
+		Plasma.LinkAdjust();
 	}
 
 	return SpawnedProjectile;

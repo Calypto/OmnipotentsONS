@@ -16,18 +16,9 @@ class LinkTank3 extends ONSHoverTank;
 #exec OBJ LOAD FILE=LinkTank3Tex.utx
 
 // ============================================================================
-// Structs
-// ============================================================================
-struct LinkerStruct {
-	var Controller LinkingController;
-	var int NumLinks;
-	var float LastLinkTime;
-};
-
-// ============================================================================
 // Consts
 // ============================================================================
-const LINK_DECAY_TIME = 0.250000;			// Time to remove a linker from the linker list
+const LINK_DECAY_TIME = 0.250000;			// How long after the last teammate heal we keep counting linkers
 const AI_HEAL_SEARCH = 4096.000000;			// Radius for bots to search for damaged actors while driving
 
 // ============================================================================
@@ -41,7 +32,7 @@ var() array<Material> LinkSkin_Gold, LinkSkin_Green, LinkSkin_Red, LinkSkin_Blue
 // Internal vars
 // ============================================================================
 
-var array<LinkerStruct> Linkers;			// For keeping track of links
+var float LastLinkedTime;					// Last time a teammate's link beam healed us
 var int Links;
 var bool bLinking;							// True if we're linking a vehicle/node/player
 var bool bBotHealing;
@@ -62,7 +53,7 @@ var EFirePriority FirePriority;
 var bool bPrimaryWasDown;
 var bool bAltWasDown;
 
-var int ExportLinks; // Links advertised to the vehicle we are healing
+var int ExportLinks; // Links our link target is credited with
 
 replication
 {
@@ -142,145 +133,15 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
 }
 */
 
-// Vehicle chain linking support by Anon
-function Pawn GetOutboundLinkTarget()
-{
-    local LinkBeamEffect B;
-
-    if (Beam != None && Beam.LinkedPawn != None)
-        return Beam.LinkedPawn;
-
-    foreach DynamicActors(class'LinkBeamEffect', B)
-    {
-        if (B != None && !B.bDeleteMe && B.LinkedPawn != None
-            && (B.Owner == self || B.Instigator == self))
-            return B.LinkedPawn;
-    }
-
-    return None;
-}
-
-function Pawn GetActorLinkTarget(Pawn P)
-{
-    local LinkBeamEffect B;
-    local LinkGun LG;
-    local Vehicle V;
-
-    if (P == None)
-        return None;
-
-    if (LinkTank3(P) != None)
-        return LinkTank3(P).GetOutboundLinkTarget();
-
-    if (P.Weapon != None)
-    {
-        LG = LinkGun(P.Weapon);
-        if (LG != None && LinkFire(LG.GetFireMode(1)) != None)
-            return LinkFire(LG.GetFireMode(1)).LockedPawn;
-    }
-
-    V = Vehicle(P);
-    foreach DynamicActors(class'LinkBeamEffect', B)
-    {
-        if (B == None || B.bDeleteMe || B.LinkedPawn == None)
-            continue;
-        if (B.Owner == P || B.Instigator == P)
-            return B.LinkedPawn;
-        if (V != None && (B.Instigator == V || B.Instigator == V.Driver))
-            return B.LinkedPawn;
-    }
-
-    return None;
-}
-
-function bool OutboundReaches(Pawn Goal)
-{
-    local Pawn Walk, Next;
-    local int Sanity;
-
-    if (Goal == None)
-        return false;
-
-    Walk = GetOutboundLinkTarget();
-    while (Walk != None && Sanity < 32)
-    {
-        if (Walk == Goal)
-            return true;
-        Next = GetActorLinkTarget(Walk);
-        if (Next == None || Next == Walk)
-            return false;
-        Walk = Next;
-        Sanity++;
-    }
-
-    return false;
-}
-
-function int GetHealerLinks(Controller Healer)
-{
-    local Pawn P;
-    local Vehicle V;
-    local string LinkStr;
-
-    if (Healer == None || Healer.Pawn == None)
-        return 0;
-
-    P = Healer.Pawn;
-    V = Vehicle(P);
-    if (ONSWeaponPawn(V) != None)
-        V = ONSWeaponPawn(V).VehicleBase;
-
-    if (V != None)
-    {
-        // A -> B -> C -> A: do not copy C.Links into A
-        if (OutboundReaches(V) || OutboundReaches(P))
-            return 0;
-
-        LinkStr = V.GetPropertyText("ExportLinks");
-        if (LinkStr != "")
-            return Max(0, int(LinkStr));
-
-        return 0; // never fall back to Links
-    }
-
-    if (P.Weapon != None && LinkGun(P.Weapon) != None)
-        return LinkGun(P.Weapon).Links;
-
-    return 0;
-}
-
+// Teammates' link beams heal us every fire interval, so a recent heal means
+// someone is linking us and ResetLinks has something to count
 function bool HealDamage(int Amount, Controller Healer, class<DamageType> DamageType)
 {
-    local int i;
-    local bool bFound;
-    local int InboundLinks;
-
     if (Healer == None || Healer.bDeleteMe)
         return false;
 
-    if (TeamLink(Healer.GetTeamNum()) && Healer != Controller)
-    {
-        InboundLinks = GetHealerLinks(Healer);
-
-        for (i = 0; i < Linkers.Length; i++)
-        {
-            if (Linkers[i].LinkingController != None && Linkers[i].LinkingController == Healer)
-            {
-                bFound = true;
-                Linkers[i].LastLinkTime = Level.TimeSeconds;
-                Linkers[i].NumLinks = InboundLinks;
-                break;
-            }
-        }
-
-        if (!bFound)
-        {
-            Linkers.Insert(0, 1);
-            Linkers[0].LinkingController = Healer;
-            Linkers[0].LastLinkTime = Level.TimeSeconds;
-            Linkers[0].NumLinks = InboundLinks;
-        }
-    }
+    if (Healer != Controller && TeamLink(Healer.GetTeamNum()))
+        LastLinkedTime = Level.TimeSeconds;
 
     return super.HealDamage(Amount, Healer, DamageType);
 }
@@ -296,51 +157,22 @@ function int GetLinks()
 
 // ============================================================================
 // ResetLinks
-// Reset our linkers, called if Links < 0 or during tick
+// Recount our linkers from the live link beams, called during tick
 // ============================================================================
 function ResetLinks()
 {
-    local int i, NewLinks, Deduct;
-    local Pawn TargetPawn, LinkerPawn;
-
-    TargetPawn = GetOutboundLinkTarget();
-
-    i = 0;
-    NewLinks = 0;
-    Deduct = 0;
-
-    while (i < Linkers.Length)
+    if (Level.TimeSeconds - LastLinkedTime > LINK_DECAY_TIME)
     {
-        if (Linkers[i].LinkingController == None
-            || Level.TimeSeconds - Linkers[i].LastLinkTime > LINK_DECAY_TIME)
-        {
-            Linkers.Remove(i, 1);
-        }
-        else
-        {
-            NewLinks += 1 + Linkers[i].NumLinks;
-
-            LinkerPawn = Linkers[i].LinkingController.Pawn;
-            if (ONSWeaponPawn(LinkerPawn) != None)
-                LinkerPawn = ONSWeaponPawn(LinkerPawn).VehicleBase;
-
-            // Current target, or anyone already on our outbound chain
-            if ((TargetPawn != None && LinkerPawn == TargetPawn)
-                || OutboundReaches(LinkerPawn))
-                Deduct += 1 + Linkers[i].NumLinks;
-
-            i++;
-        }
+        Links = 0;
+        ExportLinks = 0;
     }
-
-    Links = NewLinks;
-    ExportLinks = Max(0, NewLinks - Deduct);
+    else
+        Links = class'LinkChain'.static.CountLinkers(self, ExportLinks);
 }
-
 
 // ============================================================================
 // Tick
-// Remove linkers from the linker list after they stop linking
+// Recount our linkers every tick
 // ============================================================================
 simulated event Tick(float DT)
 {

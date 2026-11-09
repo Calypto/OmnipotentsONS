@@ -18,18 +18,9 @@ class VampireTank3 extends ONSHoverTank;
 #exec AUDIO IMPORT File=Sounds/sucksucksuck.wav
 
 // ============================================================================
-// Structs
-// ============================================================================
-struct LinkerStruct {
-	var Controller LinkingController;
-	var int NumLinks;
-	var float LastLinkTime;
-};
-
-// ============================================================================
 // Consts
 // ============================================================================
-const LINK_DECAY_TIME = 0.250000;			// Time to remove a linker from the linker list
+const LINK_DECAY_TIME = 0.250000;			// How long after the last teammate heal we keep counting linkers
 const AI_HEAL_SEARCH = 4096.000000;			// Radius for bots to search for damaged actors while driving
 
 // ============================================================================
@@ -43,7 +34,7 @@ var() array<Material> LinkSkin_Gold, LinkSkin_Green, LinkSkin_Red, LinkSkin_Blue
 // Internal vars
 // ============================================================================
 
-var array<LinkerStruct> Linkers;			// For keeping track of links
+var float LastLinkedTime;					// Last time a teammate's link beam healed us
 var int Links;
 var bool bLinking;							// True if we're linking a vehicle/node/player
 var bool bBotHealing;
@@ -53,7 +44,7 @@ var LinkAttachment.ELinkColor OldLinkColor;
 
 var VampireTank3BeamEffect Beam;
 
-var int ExportLinks; // Links advertised to the vehicle we are healing
+var int ExportLinks; // Links our link target is credited with
 
 replication
 {
@@ -133,74 +124,15 @@ function bool HealDamage(int Amount, Controller Healer, class<DamageType> Damage
 }
 */
 
-// Vehicle chain linking support by Anon
-function int GetHealerLinks(Controller Healer)
-{
-    local Pawn P;
-    local string LinkStr;
-    local Vehicle V;
-
-    if (Healer == None || Healer.Pawn == None)
-        return 0;
-
-    P = Healer.Pawn;
-
-    // Passenger turrets live on an ONSWeaponPawn; Links is on VehicleBase
-    V = Vehicle(P);
-    if (ONSWeaponPawn(V) != None)
-        V = ONSWeaponPawn(V).VehicleBase;
-
-    if (V != None)
-    {
-        LinkStr = V.GetPropertyText("ExportLinks");
-        if (LinkStr != "")
-            return Max(0, int(LinkStr));
-
-        LinkStr = V.GetPropertyText("Links");
-        if (LinkStr != "")
-            return Max(0, int(LinkStr));
-
-        return 0;
-    }
-
-    if (P.Weapon != None && LinkGun(P.Weapon) != None)
-        return LinkGun(P.Weapon).Links;
-
-    return 0;
-}
-
+// Teammates' link beams heal us every fire interval, so a recent heal means
+// someone is linking us and ResetLinks has something to count
 function bool HealDamage(int Amount, Controller Healer, class<DamageType> DamageType)
 {
-    local int i;
-    local bool bFound;
-    local int InboundLinks;
-
     if (Healer == None || Healer.bDeleteMe)
         return false;
 
-    if (TeamLink(Healer.GetTeamNum()) && Healer != Controller)
-    {
-        InboundLinks = GetHealerLinks(Healer);
-
-        for (i = 0; i < Linkers.Length; i++)
-        {
-            if (Linkers[i].LinkingController != None && Linkers[i].LinkingController == Healer)
-            {
-                bFound = true;
-                Linkers[i].LastLinkTime = Level.TimeSeconds;
-                Linkers[i].NumLinks = InboundLinks;
-                break;
-            }
-        }
-
-        if (!bFound)
-        {
-            Linkers.Insert(0, 1);
-            Linkers[0].LinkingController = Healer;
-            Linkers[0].LastLinkTime = Level.TimeSeconds;
-            Linkers[0].NumLinks = InboundLinks;
-        }
-    }
+    if (Healer != Controller && TeamLink(Healer.GetTeamNum()))
+        LastLinkedTime = Level.TimeSeconds;
 
     return super.HealDamage(Amount, Healer, DamageType);
 }
@@ -216,47 +148,22 @@ function int GetLinks()
 
 // ============================================================================
 // ResetLinks
-// Reset our linkers, called if Links < 0 or during tick
+// Recount our linkers from the live link beams, called during tick
 // ============================================================================
 function ResetLinks()
 {
-    local int i, NewLinks, Deduct;
-    local Controller TargetCtrl;
-
-    if (Beam != None && Beam.LinkedPawn != None)
-        TargetCtrl = Beam.LinkedPawn.Controller;
-
-    i = 0;
-    NewLinks = 0;
-    Deduct = 0;
-
-    while (i < Linkers.Length)
+    if (Level.TimeSeconds - LastLinkedTime > LINK_DECAY_TIME)
     {
-        if (Linkers[i].LinkingController == None
-            || Level.TimeSeconds - Linkers[i].LastLinkTime > LINK_DECAY_TIME)
-        {
-            Linkers.Remove(i, 1);
-        }
-        else
-        {
-            NewLinks += 1 + Linkers[i].NumLinks;
-
-            // If we are healing our own linker, drop that entry from what we advertise
-            if (TargetCtrl != None && Linkers[i].LinkingController == TargetCtrl)
-                Deduct = 1 + Linkers[i].NumLinks;
-
-            i++;
-        }
+        Links = 0;
+        ExportLinks = 0;
     }
-
-    Links = NewLinks;
-    ExportLinks = Max(0, NewLinks - Deduct);
+    else
+        Links = class'LinkChain'.static.CountLinkers(self, ExportLinks);
 }
-
 
 // ============================================================================
 // Tick
-// Remove linkers from the linker list after they stop linking
+// Recount our linkers every tick
 // ============================================================================
 simulated event Tick(float DT)
 {

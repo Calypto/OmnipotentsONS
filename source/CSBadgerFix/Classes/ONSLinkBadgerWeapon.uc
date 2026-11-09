@@ -3,6 +3,8 @@
 //=============================================================================
 class ONSLinkBadgerWeapon extends ONSLinkTankWeapon;
 
+var int LastLinksSent;  // link count last relayed to LockedPawn's link chain
+
 // ============================================================================
 // ============================================================================
 simulated function UpdateLinkColor( LinkAttachment.ELinkColor Color )
@@ -134,6 +136,7 @@ simulated event Tick(float dt)
 	local DestroyableObjective HealObjective;
 	local Vehicle LinkedVehicle;
 	local LinkBeamEffect Beam;
+	local float BeamDamageScale;
  // local float DamageAmount;
 
 	//log(self@"tick beam"@Beam@"uptime"@UpTime@"role"@Role,'KDebug');
@@ -331,7 +334,7 @@ simulated event Tick(float dt)
             EndTrace = StartTrace + TraceRange * X;
         }
 
-        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+        Other = BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
         if ( Other != None && Other != Instigator )
 			EndEffect = HitLocation;
 		else
@@ -365,6 +368,15 @@ simulated event Tick(float dt)
 			*/
 			return;
 		}
+
+        // Relay changes in our exported links down an infantry link chain while locked on
+        if (LockedPawn != None && !bFeedbackDeath && LinkTank != None && LinkTank.ExportLinks != LastLinksSent)
+        {
+        	RemoveLink(1 + LastLinksSent, Instigator);
+        	LastLinksSent = LinkTank.ExportLinks;
+        	if (!AddLink(1 + LastLinksSent, Instigator))
+        		bFeedbackDeath = true;
+        }
 
         if ( Other != None && Other != Instigator )
         {
@@ -422,7 +434,10 @@ simulated event Tick(float dt)
 							if (LockedPawn != None)
 								warn(self@"called takedamage with a linked pawn!!!");
 							else
+							{
+								AdjustedDamage *= BeamDamageScale;
 								Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, MomentumTransfer*X, AltDamageType);
+							}
 						}
 
 						if ( Beam != None )
@@ -551,7 +566,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 	    if (LockedPawn != None && LinkBadger(Owner) != None)
 	    {
 			//log(self@"setlinkto"@other@"current"@LockedPawn,'KDebug');
-	        RemoveLink(1 + LinkBadger(Owner).GetLinks(), Instigator);
+	        RemoveLink(1 + LastLinksSent, Instigator);
+	        bFeedbackDeath = false;
 
 	        // Added flag so the tank doesn't flash from green to teamcolor rapidly while linking a non-Wormbo node
 	        if (!bHealing)
@@ -571,7 +587,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 	    {
 			if (LinkBadger(Owner) != None)
 			{
-		        if (!AddLink(1 + LinkBadger(Owner).GetLinks(), Instigator))
+		        LastLinksSent = LinkBadger(Owner).ExportLinks;
+		        if (!AddLink(1 + LastLinksSent, Instigator))
 		        {
 		            bFeedbackDeath = true;
 		        }

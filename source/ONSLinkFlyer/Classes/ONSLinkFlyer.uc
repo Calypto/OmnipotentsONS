@@ -12,19 +12,9 @@ class ONSLinkFlyer extends ONSAttackCraft;
 #exec OBJ LOAD FILE=..\textures\LinkFlyer_Tex.utx
 
 // ============================================================================
-// Internal Structs
-// ============================================================================
-struct LinkerStruct
-    {
-    var Controller LinkingController;
-    var int NumLinks;
-    var float LastLinkTime;
-    };
-
-// ============================================================================
 // Consts
 // ============================================================================
-const LINK_DECAY_TIME=0.25;             // Time to remove a linker from the linker list
+const LINK_DECAY_TIME=0.25;             // How long after the last teammate heal we keep counting linkers
 const AI_HEAL_SEARCH=4096.0;            // Radius for bots to search for damaged actors while driving
 
 // ============================================================================
@@ -35,7 +25,7 @@ var() array<Material> LinkSkin_Gold, LinkSkin_Green, LinkSkin_Red, LinkSkin_Blue
 // ============================================================================
 // Internal vars
 // ============================================================================
-var array<LinkerStruct> Linkers;        // For keeping track of links
+var float LastLinkedTime;               // Last time a teammate's link beam healed us
 var int Links;
 var bool bLinking;                      // True if we're linking a vehicle/node/player
 var bool bBeaming;                      // True if utilizing alt-fire
@@ -51,6 +41,8 @@ enum EFirePriority
 var EFirePriority FirePriority;
 var bool bPrimaryWasDown;
 var bool bAltWasDown;
+
+var int ExportLinks; // Links our link target is credited with
 
 //var bool bBotHealing;
 //var LinkAttachment.ELinkColor OldLinkColor;
@@ -114,105 +106,127 @@ replication
         }
 		*/
 
-// Vehicle chain linking support by Anon
-function int GetHealerLinks(Controller Healer)
-{
-    local string LinkStr;
-
-    if (Healer == None || Healer.Pawn == None)
-        return 0;
-
-    // 1. If healer is in a vehicle (LinkTank, TickScorpion, LinkBadger, etc.)
-    if (Vehicle(Healer.Pawn) != None)
-    {
-        LinkStr = Healer.Pawn.GetPropertyText("Links");
-        if (LinkStr != "")
-            return int(LinkStr);
-    }
-    // 2. If healer is a player holding a LinkGun
-    else if (Healer.Pawn.Weapon != None && LinkGun(Healer.Pawn.Weapon) != None)
-    {
-        return LinkGun(Healer.Pawn.Weapon).Links;
-    }
-
-    return 0;
-}
-
+// Teammates' link beams heal us every fire interval, so a recent heal means
+// someone is linking us and ResetLinks has something to count
 function bool HealDamage(int Amount, Controller Healer, class<DamageType> DamageType)
 {
-    local int i;
-    local bool bFound;
-    local int InboundLinks;
-
     if (Healer == None || Healer.bDeleteMe)
         return false;
 
-    if (TeamLink(Healer.GetTeamNum()) && Healer != Controller)
-    {
-        InboundLinks = GetHealerLinks(Healer);
-
-        for (i = 0; i < Linkers.Length; i++)
-        {
-            if (Linkers[i].LinkingController != None && Linkers[i].LinkingController == Healer)
-            {
-                bFound = true;
-                Linkers[i].LastLinkTime = Level.TimeSeconds;
-                Linkers[i].NumLinks = InboundLinks;
-                break;
-            }
-        }
-
-        if (!bFound)
-        {
-            Linkers.Insert(0, 1);
-            Linkers[0].LinkingController = Healer;
-            Linkers[0].LastLinkTime = Level.TimeSeconds;
-            Linkers[0].NumLinks = InboundLinks;
-        }
-    }
+    if (Healer != Controller && TeamLink(Healer.GetTeamNum()))
+        LastLinkedTime = Level.TimeSeconds;
 
     return super.HealDamage(Amount, Healer, DamageType);
 }
 
-    // ============================================================================
-    // GetLinks
-    // Returns number of linkers
-    // ============================================================================
-    function int GetLinks()
+// ============================================================================
+// GetLinks
+// Returns number of linkers
+// ============================================================================
+function int GetLinks()
+{
+	return Links;
+}
+
+// ============================================================================
+// ResetLinks
+// Recount our linkers from the live link beams, called during tick
+// ============================================================================
+
+function ResetLinks()
+{
+    if (Level.TimeSeconds - LastLinkedTime > LINK_DECAY_TIME)
+    {
+        Links = 0;
+        ExportLinks = 0;
+    }
+    else
+        Links = CountLinkers(ExportLinks);
+}
+
+// ============================================================================
+// CountLinkers
+// Copy of LinkVehiclesOmni.LinkChain.CountLinkers so this package stays
+// independent. Returns how many distinct pawns beam into us, directly or
+// through a chain; each pawn counts once, so beams that loop back cannot
+// inflate the count. Export receives the same count minus the pawns that only
+// reach us through our own link target, which already counts those itself.
+// ============================================================================
+function int CountLinkers(out int Export)
+{
+    local LinkBeamEffect B;
+    local Pawn S, D, Target;
+    local Pawn Src[32], Dst[32], Seen[33];
+    local byte ViaTarget[33];
+    local int NumEdges, NumSeen, NumVia, Head, i;
+
+    foreach DynamicActors(class'LinkBeamEffect', B)
+    {
+        D = B.LinkedPawn;
+        if (D == None)
+            continue;
+
+        // Vehicle beams are owned by the vehicle (or passenger seat), infantry beams by the player
+        S = Pawn(B.Owner);
+        if (S == None)
+            S = B.Instigator;
+        if (S == None)
+            continue;
+        if (S.DrivenVehicle != None)
+            S = S.DrivenVehicle;
+
+        // A link onto a driver or a passenger seat counts for the vehicle itself
+        if (D.DrivenVehicle != None)
+            D = D.DrivenVehicle;
+        if (ONSWeaponPawn(D) != None && ONSWeaponPawn(D).VehicleBase != None)
+            D = ONSWeaponPawn(D).VehicleBase;
+
+        if (S == self)
         {
-        return Links;
+            Target = D;
+            continue;
         }
 
-    // ============================================================================
-    // ResetLinks
-    // Reset our linkers, called if Links < 0 or during tick
-    // ============================================================================
-    function ResetLinks()
-        {
-        local int i;
-        local int NewLinks;
+        // A pawn links a single target, so another beam from the same source is the same edge
+        for (i = 0; i < NumEdges; i++)
+            if (Src[i] == S)
+                break;
+        if (i < NumEdges || NumEdges == ArrayCount(Src))
+            continue;
 
-        i=0;
-        NewLinks=0;
-        while (i < Linkers.Length)
+        Src[NumEdges] = S;
+        Dst[NumEdges] = D;
+        NumEdges++;
+    }
+
+    // Walk the beams backwards from us. Each source has one edge and our own
+    // beam is left out, so every pawn is reached exactly once.
+    Seen[0] = self;
+    NumSeen = 1;
+    for (Head = 0; Head < NumSeen; Head++)
+    {
+        for (i = 0; i < NumEdges; i++)
+        {
+            if (Dst[i] == Seen[Head])
             {
-            // Remove linkers when their controllers are deleted Or remove if LINK_DECAY_TIME seconds pass since they last linked the flyer
-            if (Linkers[i].LinkingController==None||Level.TimeSeconds-Linkers[i].LastLinkTime > LINK_DECAY_TIME)
-                Linkers.Remove(i, 1);
-            else
+                Seen[NumSeen] = Src[i];
+                if (ViaTarget[Head] != 0 || Src[i] == Target)
                 {
-                NewLinks+=1+Linkers[i].NumLinks;
-                i++;
+                    ViaTarget[NumSeen] = 1;
+                    NumVia++;
                 }
+                NumSeen++;
             }
-
-        if (Links!=NewLinks)
-            Links=NewLinks;
         }
+    }
+
+    Export = NumSeen - 1 - NumVia;
+    return NumSeen - 1;
+}
 
 // ============================================================================
 // Tick
-// Remove linkers from the linker list after they stop linking
+// Recount our linkers every tick
 // ============================================================================
 simulated event Tick(float DT)
 {

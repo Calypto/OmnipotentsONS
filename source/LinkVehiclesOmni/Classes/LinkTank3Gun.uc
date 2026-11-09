@@ -29,6 +29,7 @@ var float LinkMultiplier;  // linkers increase factor
 var float LinkMultiplierCap; // Max Damage increase from Linkers.
 var config int VehicleHealScore; // how much occupied vehicle healing = 1pt player score
 var float RangeExtPerLink; // how much range is extended per linker
+var() float ShieldPassDamageScale; // beam damage multiplier per teammate Bastion/Fanatic/Hospitaler shield passed through
 
 
 // ============================================================================
@@ -51,6 +52,8 @@ var byte	SentLinkVolume;
 var rotator DesiredAimError, CurrentAimError;
 
 var Sound OldAmbientSound;
+
+var int LastLinksSent;  // link count last relayed to LockedPawn's link chain
 
 // ============================================================================
 //replication
@@ -258,6 +261,7 @@ simulated event Tick(float dt)
 	local Vehicle LinkedVehicle;
 	local LinkBeamEffect Beam;
 	local Pawn P;
+	local float BeamDamageScale;
 
 
 	//log(self@"tick beam"@Beam@"uptime"@UpTime@"role"@Role,'KDebug');
@@ -270,27 +274,27 @@ simulated event Tick(float dt)
 	// Instead let's get a reference to our LinkTank
 	// This is easily changed over if I decide I want to recode the Link Badger based off this code
 	//log(Level.TimeSeconds@self@"TICK -- Owner"@Owner@"LinkTank of Owner"@LinkTank3(Owner),'KDebug');
-	if (LinkTank3(Owner) != None)
-	{
-		LinkTank = LinkTank3(Owner);
-		NumLinks = LinkTank.GetLinks();
-		Beam = LinkTank3(Owner).Beam;
-		if (Beam != None) LinkTank3BeamEffect(Beam).SetBeamSize(NumLinks);
-	// Need to subclass, but Link 2.0 uses base linkema
-	}
-	else
-		NumLinks = 0;
-	
+	LinkTank = LinkTank3(Owner);
+	if (LinkTank != None)
+		Beam = LinkTank.Beam;
+
 	//if (Role < ROLE_Authority)
 	//	log(Level.TimeSeconds@self@"TICK -- Role"@Role@"LinkBeam"@Beam,'KDebug');
 
-	// If not firing, restore value of bInitAimError
-	if (Beam == None && Role == ROLE_Authority) 	{
-		bInitAimError = true;
+	// No beam, nothing to maintain. Clients return here too: other players get the beam's
+	// EndEffect by replication, and the beam effect sizes itself from its replicated Links.
+	if (Beam == None)
+	{
+		// If not firing, restore value of bInitAimError
+		if (Role == ROLE_Authority)
+			bInitAimError = true;
 		return;
 	}
 
-	if (LinkTank != None && LinkTank.GetLinks() < 0) 	{
+	// Beam only ever comes from LinkTank, so LinkTank is set here
+	NumLinks = LinkTank.Links;
+
+	if (NumLinks < 0) 	{
         //log("warning:"@Instigator@"linktank had"@LinkTank.GetLinks()@"links");
         LinkTank.ResetLinks();
     }
@@ -402,7 +406,7 @@ simulated event Tick(float dt)
             EndTrace = StartTrace + TraceRange * X;
         }
 
-        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+        Other = BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
         if ( Other != None && Other != Instigator )
 			EndEffect = HitLocation;
 		else
@@ -435,6 +439,15 @@ simulated event Tick(float dt)
 			}
 			*/
 			return;
+		}
+
+		// Relay changes in our exported links down an infantry link chain while locked on
+		if (LockedPawn != None && !bFeedbackDeath && LinkTank != None && LinkTank.ExportLinks != LastLinksSent)
+		{
+			RemoveLink(1 + LastLinksSent, Instigator);
+			LastLinksSent = LinkTank.ExportLinks;
+			if (!AddLink(1 + LastLinksSent, Instigator))
+				bFeedbackDeath = true;
 		}
 
 		if (Other != None && Other != Instigator)
@@ -480,7 +493,7 @@ simulated event Tick(float dt)
 					}
 					else
 					{
-						AdjustedDamage = AdjustLinkDamage(NumLinks, Other, AltDamage);
+						AdjustedDamage = AdjustLinkDamage(NumLinks, Other, AltDamage) * BeamDamageScale;
 						Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, MomentumTransfer * X, AltDamageType);
 					}
 				}
@@ -623,7 +636,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 	    if (LockedPawn != None && LinkTank3(Owner) != None)
 	    {
 			//log(self@"setlinkto"@other@"current"@LockedPawn,'KDebug');
-	        RemoveLink(1 + LinkTank3(Owner).GetLinks(), Instigator);
+	        RemoveLink(1 + LastLinksSent, Instigator);
+	        bFeedbackDeath = false;
 
 	        // Added flag so the tank doesn't flash from green to teamcolor rapidly while linking a non-Wormbo node
 	        if (!bHealing)
@@ -643,7 +657,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 	    {
 			if (LinkTank3(Owner) != None)
 			{
-		        if (!AddLink(1 + LinkTank3(Owner).GetLinks(), Instigator))
+		        LastLinksSent = LinkTank3(Owner).ExportLinks;
+		        if (!AddLink(1 + LastLinksSent, Instigator))
 		        {
 		            bFeedbackDeath = true;
 		        }
@@ -714,9 +729,6 @@ function RemoveLink(int Size, Pawn Starter)
 // IsLinkable
 // More c/p action
 // ============================================================================
-// Next pawn this actor is currently beaming, if any.
-// Players: LinkFire.LockedPawn
-// Vehicles: stock LinkBeamEffect.LinkedPawn (Owner or Instigator)
 function Pawn ResolveLinkTarget(Actor Other)
 {
     local Pawn P;
@@ -758,78 +770,6 @@ function bool IsSameLinkTarget(Actor Other, Pawn LinkTarget)
     return (P == LinkTarget);
 }
 
-function Pawn GetPawnLinkTarget(Pawn P)
-{
-    local LinkBeamEffect B;
-    local LinkGun LG;
-    local Inventory Inv;
-    local Vehicle V;
-
-    if (P == None)
-        return None;
-
-    if (P.Weapon != None)
-    {
-        LG = LinkGun(P.Weapon);
-        if (LG != None && LinkFire(LG.GetFireMode(1)) != None)
-            return LinkFire(LG.GetFireMode(1)).LockedPawn;
-    }
-
-    Inv = P.FindInventoryType(class'LinkGun');
-    if (Inv != None && LinkFire(LinkGun(Inv).GetFireMode(1)) != None)
-        return LinkFire(LinkGun(Inv).GetFireMode(1)).LockedPawn;
-
-    V = Vehicle(P);
-
-    foreach DynamicActors(class'LinkBeamEffect', B)
-    {
-        if (B == None || B.bDeleteMe || B.LinkedPawn == None)
-            continue;
-
-        if (B.Owner == P || B.Instigator == P)
-            return B.LinkedPawn;
-
-        if (V != None && (B.Owner == V || B.Instigator == V || B.Instigator == V.Driver))
-            return B.LinkedPawn;
-    }
-
-    return None;
-}
-
-// True if locking Start would close a 3+ cycle back to this vehicle.
-function bool WouldCreateLinkCycle(Pawn Start)
-{
-    local Pawn Walk, Next, SelfPawn;
-    local int Sanity;
-
-    SelfPawn = Pawn(Owner);
-    if (SelfPawn == None)
-        SelfPawn = Instigator;
-
-    Walk = Start;
-    while (Walk != None && Sanity < 32)
-    {
-        Next = GetPawnLinkTarget(Walk);
-        if (Next == None)
-            return false;
-
-        if (Next == Walk)
-            return true;
-
-        if (Next == SelfPawn || Next == Instigator)
-        {
-            // sanity 0 = they are beaming us directly (2-cycle). Allow it.
-            // sanity > 0 = A -> B -> C -> A. Refuse.
-            return (Sanity > 0);
-        }
-
-        Walk = Next;
-        Sanity++;
-    }
-
-    return (Sanity >= 32);
-}
-
 function bool IsLinkable(Actor Other)
 {
     local Pawn P;
@@ -853,10 +793,37 @@ function bool IsLinkable(Actor Other)
     if (P.Weapon == None || !P.Weapon.IsA('LinkGun'))
         return false;
 
-    if (WouldCreateLinkCycle(P))
-        return false;
-
     return (Level.Game.bTeamGame && P.GetTeamNum() == ONSVehicle(Owner).Team);
+}
+
+// ============================================================================
+// BeamTrace
+// Beam trace that passes through active teammate Bastion/Fanatic/Hospitaler shields.
+// DamageScale is multiplied by ShieldPassDamageScale per shield passed.
+// Shields matched by name: no dependency on ShieldVehiclesOmni or HospitalerV3Omni.
+// ============================================================================
+simulated static function Actor BeamTrace(ONSWeapon Gun, out Vector HitLocation, out Vector HitNormal, Vector End, Vector Start, out float DamageScale)
+{
+	local Actor Other, Skipped[4];
+	local int i, n;
+
+	DamageScale = 1.0;
+	Other = Gun.Trace(HitLocation, HitNormal, End, Start, true);
+	while ( Other != None && n < ArrayCount(Skipped) && ONSWeapon(Other.Owner) != None
+		&& ONSWeapon(Other.Owner).Team == Gun.Team
+		&& (Other.IsA('BastionShield') || Other.IsA('FanaticShield') || Other.IsA('HospitalerShield')) )
+	{
+		Other.bBlockZeroExtentTraces = false;
+		Skipped[n] = Other;
+		n++;
+		DamageScale *= default.ShieldPassDamageScale;
+		Other = Gun.Trace(HitLocation, HitNormal, End, HitLocation, true);
+	}
+
+	for (i = 0; i < n; i++)
+		Skipped[i].bBlockZeroExtentTraces = true;
+
+	return Other;
 }
 
 
@@ -1050,4 +1017,5 @@ defaultproperties
      TransientSoundRadius=1024.000000
      VehicleHealScore=250
      RangeExtPerLink=500 // how much range is extended per linker
+     ShieldPassDamageScale=0.500000
 }

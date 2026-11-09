@@ -50,6 +50,8 @@ var rotator DesiredAimError, CurrentAimError;
 
 var Sound OldAmbientSound;
 
+var int LastLinksSent;  // link count last relayed to LockedPawn's link chain
+
 // ============================================================================
 //replication
 // ============================================================================
@@ -232,6 +234,7 @@ simulated event Tick(float dt)
 	//local bot B;
 	local bool bIsHealingObjective;
 	local int AdjustedDamage, NumLinks;
+	local float BeamDamageScale;
 	//local LinkBeamEffect LB;
 	local DestroyableObjective HealObjective;
 	local Vehicle LinkedVehicle;
@@ -248,27 +251,27 @@ simulated event Tick(float dt)
 	// Instead let's get a reference to our LinkTank
 	// This is easily changed over if I decide I want to recode the Link Badger based off this code
 	//log(Level.TimeSeconds@self@"TICK -- Owner"@Owner@"LinkTank of Owner"@LinkTank3Heavy(Owner),'KDebug');
-	if (LinkTank3Heavy(Owner) != None)
-	{
-		LinkTank = LinkTank3Heavy(Owner);
-		NumLinks = LinkTank.GetLinks();
-		Beam = LinkTank3Heavy(Owner).Beam;
-		if (Beam != None )	 LinkTank3HeavyBeamEffect(Beam).SetBeamSize(NumLinks);
-	}
-	else
-		NumLinks = 0;
-	
+	LinkTank = LinkTank3Heavy(Owner);
+	if (LinkTank != None)
+		Beam = LinkTank.Beam;
+
 	//if (Role < ROLE_Authority)
 	//	log(Level.TimeSeconds@self@"TICK -- Role"@Role@"LinkBeam"@Beam,'KDebug');
 
-	// If not firing, restore value of bInitAimError
-	if (Beam == None && Role == ROLE_Authority)
+	// No beam, nothing to maintain. Clients return here too: other players get the beam's
+	// EndEffect by replication, and the beam effect sizes itself from its replicated Links.
+	if (Beam == None)
 	{
-		bInitAimError = true;
+		// If not firing, restore value of bInitAimError
+		if (Role == ROLE_Authority)
+			bInitAimError = true;
 		return;
 	}
 
-	if (LinkTank != None && LinkTank.GetLinks() < 0)
+	// Beam only ever comes from LinkTank, so LinkTank is set here
+	NumLinks = LinkTank.Links;
+
+	if (NumLinks < 0)
 	{
         //log("warning:"@Instigator@"linktank had"@LinkTank.GetLinks()@"links");
         LinkTank.ResetLinks();
@@ -382,7 +385,7 @@ simulated event Tick(float dt)
             EndTrace = StartTrace + TraceRange * X;
         }
 
-        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+        Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
         if ( Other != None && Other != Instigator )
 			EndEffect = HitLocation;
 		else
@@ -416,6 +419,15 @@ simulated event Tick(float dt)
 			*/
 			return;
 		}
+
+        // Relay changes in our exported links down an infantry link chain while locked on
+        if (LockedPawn != None && !bFeedbackDeath && LinkTank != None && LinkTank.ExportLinks != LastLinksSent)
+        {
+        	RemoveLink(1 + LastLinksSent, Instigator);
+        	LastLinksSent = LinkTank.ExportLinks;
+        	if (!AddLink(1 + LastLinksSent, Instigator))
+        		bFeedbackDeath = true;
+        }
 
         if ( Other != None && Other != Instigator )
         {
@@ -473,7 +485,7 @@ simulated event Tick(float dt)
 							if (LockedPawn != None)
 								warn(self@"called takedamage with a linked pawn!!!");
 							else {
-								 AdjustedDamage = AdjustLinkDamage( NumLinks, Other, AltDamage );
+								 AdjustedDamage = AdjustLinkDamage( NumLinks, Other, AltDamage ) * BeamDamageScale;
 								Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, MomentumTransfer*X, AltDamageType);
 								
 							}	
@@ -609,7 +621,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 	    if (LockedPawn != None && LinkTank3Heavy(Owner) != None)
 	    {
 			//log(self@"setlinkto"@other@"current"@LockedPawn,'KDebug');
-	        RemoveLink(1 + LinkTank3Heavy(Owner).GetLinks(), Instigator);
+	        RemoveLink(1 + LastLinksSent, Instigator);
+	        bFeedbackDeath = false;
 
 	        // Added flag so the tank doesn't flash from green to teamcolor rapidly while linking a non-Wormbo node
 	        if (!bHealing)
@@ -629,7 +642,8 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 	    {
 			if (LinkTank3Heavy(Owner) != None)
 			{
-		        if (!AddLink(1 + LinkTank3Heavy(Owner).GetLinks(), Instigator))
+		        LastLinksSent = LinkTank3Heavy(Owner).ExportLinks;
+		        if (!AddLink(1 + LastLinksSent, Instigator))
 		        {
 		            bFeedbackDeath = true;
 		        }

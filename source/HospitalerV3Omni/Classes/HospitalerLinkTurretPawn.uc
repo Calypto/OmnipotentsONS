@@ -58,6 +58,22 @@ function VehicleCeaseFire(bool bWasAltFire)
     }
 }
 
+// Leaving the seat or dying in it never sends a cease-fire, so stop the beam
+// (and its looping hum) here or it keeps playing on the empty turret.
+function DriverLeft()
+{
+	if (Gun != None)
+		Gun.WeaponCeaseFire(Controller, true);
+	Super.DriverLeft();
+}
+
+function DriverDied()
+{
+	if (Gun != None)
+		Gun.WeaponCeaseFire(Controller, true);
+	Super.DriverDied();
+}
+
 
 // ============================================================================
 // ============================================================================

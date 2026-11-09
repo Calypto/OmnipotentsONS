@@ -26,6 +26,7 @@ var(LinkBeam) float LinkFlexibility;
 var(LinkBeam) byte	LinkVolume;
 var(LinkBeam) Sound BeamSounds[4];
 var(LinkBeam) float VehicleDamageMult;
+var(LinkBeam) float ShieldPassDamageScale; // beam damage multiplier per teammate Bastion/Fanatic/Hospitaler shield passed through
 
 // ============================================================================
 // Internal vars
@@ -768,6 +769,36 @@ function bool IsLinkable(Actor Other)
     return false;
 }
 
+// ============================================================================
+// BeamTrace
+// Beam trace that passes through active teammate Bastion/Fanatic/Hospitaler shields.
+// DamageScale is multiplied by ShieldPassDamageScale per shield passed.
+// Shields matched by name: no dependency on ShieldVehiclesOmni or HospitalerV3Omni.
+// ============================================================================
+simulated static function Actor BeamTrace(ONSWeapon Gun, out Vector HitLocation, out Vector HitNormal, Vector End, Vector Start, out float DamageScale)
+{
+	local Actor Other, Skipped[4];
+	local int i, n;
+
+	DamageScale = 1.0;
+	Other = Gun.Trace(HitLocation, HitNormal, End, Start, true);
+	while ( Other != None && n < ArrayCount(Skipped) && ONSWeapon(Other.Owner) != None
+		&& ONSWeapon(Other.Owner).Team == Gun.Team
+		&& (Other.IsA('BastionShield') || Other.IsA('FanaticShield') || Other.IsA('HospitalerShield')) )
+	{
+		Other.bBlockZeroExtentTraces = false;
+		Skipped[n] = Other;
+		n++;
+		DamageScale *= default.ShieldPassDamageScale;
+		Other = Gun.Trace(HitLocation, HitNormal, End, HitLocation, true);
+	}
+
+	for (i = 0; i < n; i++)
+		Skipped[i].bBlockZeroExtentTraces = true;
+
+	return Other;
+}
+
 
 // ============================================================================
 // TraceFire
@@ -960,5 +991,6 @@ defaultproperties
 
      VehicleHealScore=800
      LinkMultiplier = 0.9
+     ShieldPassDamageScale=0.500000
 }
 

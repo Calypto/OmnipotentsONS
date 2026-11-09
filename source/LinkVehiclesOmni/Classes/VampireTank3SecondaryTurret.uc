@@ -241,7 +241,8 @@ simulated event Tick(float dt)
 	//local LinkBeamEffect LB;
 	local DestroyableObjective HealObjective;
 	local Vehicle LinkedVehicle;
-	
+	local float BeamDamageScale;
+
 	//local VampireTank3TurretBeamEffect Beam;
 
 	//log(self@"tick beam"@Beam@"uptime"@UpTime@"role"@Role,'KDebug');
@@ -349,7 +350,7 @@ simulated event Tick(float dt)
             EndTrace = StartTrace + TraceRange * X;
         }
 
-        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+        Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
         if ( Other != None && Other != Instigator )
 			     EndEffect = HitLocation;
 		    else
@@ -410,7 +411,7 @@ simulated event Tick(float dt)
 													if (LockedPawn != None)
 														warn(self@"called takedamage with a linked pawn!!!");
 													else {
-														 AdjustedDamage = AdjustLinkDamage( NumLinks, Other, AltDamage );
+														 AdjustedDamage = AdjustLinkDamage( NumLinks, Other, AltDamage ) * BeamDamageScale;
 														 Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, MomentumTransfer*X, AltDamageType);
 														 //log(self@"Just before HealDamage to MyVampireTank="@MyVampireTank); 
 														 if (MyVampireTank!=None&&MyVampireTank.Health<MyVampireTank.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)&&!LockedPawn.IsInState('NeutralCore')))

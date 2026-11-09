@@ -21,10 +21,10 @@ var(LinkBeam) class<DamageType> AltDamageType;
 var(LinkBeam) int AltDamage;
 var(LinkBeam) String MakeLinkForce;
 var(LinkBeam) float LinkFlexibility;
-var(LinkBeam) byte	LinkVolume;
 var(LinkBeam) Sound BeamSounds[4];
 var(LinkBeam) float VehicleDamageMult;
 var(LinkBeam) float LinkMultiplierCap;
+var(LinkBeam) float ShieldPassDamageScale; // beam damage multiplier per teammate Bastion/Fanatic/Hospitaler shield passed through
 
 var float LinkMultiplier;  // linkers increase factor, not used in vampire, but will leave the code just in case want to add it back
 var HospitalerLinkTurretBeamEffect Beam;
@@ -48,13 +48,11 @@ var		bool bDoHit;
 var		bool bFeedbackDeath;
 var		bool bLinkFeedbackPlaying;
 var		bool bStartFire;
-var byte	SentLinkVolume;
-
 var rotator DesiredAimError, CurrentAimError;
 
-var Sound OldAmbientSound;
 var bool bBeaming;							// True if utilizing alt-fire
 var bool bLinking; //true if alt-fire and locked to pawn
+var int SentLinks; // links SetLinkTo credited to LockedPawn's link gun chain (server only)
 
 // ============================================================================
 replication
@@ -199,9 +197,6 @@ function WeaponCeaseFire(Controller C, bool bWasAltFire)
 			bBeaming = false;
 		}
 		AmbientSound = None;
-		//Owner.AmbientSound = OldAmbientSound;
-		OldAmbientSound = None;
-		//Owner.SoundVolume = ONSVehicle(Owner).Default.SoundVolume;
 		SetLinkTo(None);
 	  bLinking=False;
 		// Can't link if there's no beam
@@ -213,6 +208,17 @@ function WeaponCeaseFire(Controller C, bool bWasAltFire)
 		}
 		*/
 	}
+}
+
+// ============================================================================
+// Destroyed
+// Dying with the Hospitaler skips cease-fire, so take back links credited to LockedPawn
+// ============================================================================
+simulated function Destroyed()
+{
+	if (SentLinks != 0)
+		RemoveLink(SentLinks, MyHospitaler);
+	Super.Destroyed();
 }
 
 // ============================================================================
@@ -233,13 +239,18 @@ simulated event Tick(float dt)
 	//local LinkBeamEffect LB;
 	local DestroyableObjective HealObjective;
 	local Vehicle LinkedVehicle;
-	
+	local float BeamDamageScale;
+
 	//local HospitilarLinkTurretTurretBeamEffect Beam;
 
 	//log(self@"tick beam"@Beam@"uptime"@UpTime@"role"@Role,'KDebug');
 
-	// I don't think ONSWeapon has a tick by default but it's always a good idea to call super when in doubt
-	Super.Tick(dt);
+	// No Super.Tick(): ONSWeapon has no script Tick and Actor.Tick is an empty event.
+
+	// Nothing to maintain without a beam. Covers clients too, which otherwise ran
+	// CalcWeaponFire() and a full BeamTrace() every frame for every idle link turret.
+	if (Beam == None)
+		return;
 
 	// We're not a LinkGun, so we don't need this
 	//LinkGun = LinkGun(Weapon);
@@ -247,24 +258,18 @@ simulated event Tick(float dt)
 	// This is easily changed over if I decide I want to recode the Link Badger based off this code
 	//log(Level.TimeSeconds@self@"TICK -- Owner"@Owner@"LinkTank of Owner"@HospitilarLinkTurret(Owner),'KDebug');
 
-	if (Owner != None) MyHospitaler = HospitalerV3Omni(ONSWeaponPawn(Owner).VehicleBase);
-	NumLinks = 0;
+	// The gun is bone-attached to its Hospitaler; Base replicates to every client (Owner only to the owning one).
+	// Read Links directly: GetLinks() isn't simulated, so clients got 0 and drew the beam without RangeExtPerLink.
+	MyHospitaler = HospitalerV3Omni(Base);
+	if (MyHospitaler != None)
+		NumLinks = MyHospitaler.Links;
 	
-	//  link stacking	
-	if (MyHospitaler != None) {
-		  NumLinks = MyHospitaler.GetLinks();
-  } 
 	
 	
 	  
 	//if (Role < ROLE_Authority)
 	//	log(Level.TimeSeconds@self@"TICK -- Role"@Role@"LinkBeam"@Beam,'KDebug');
 
-	// If not firing, restore value of bInitAimError
-	if (Beam == None && Role == ROLE_Authority) 	{
-		bInitAimError = true;
-		return;
-	}
 
 	//if (MyHospitaler != None && MyHospitaler.GetLinks() < 0) 	{
         //log("warning:"@Instigator@"linktank had"@LinkTank.GetLinks()@"links");
@@ -310,7 +315,7 @@ simulated event Tick(float dt)
 				}
 			*/
 
-			if ( Beam != None ) LockedPawn = Beam.LinkedPawn;
+			LockedPawn = Beam.LinkedPawn;
 			//log("in tick found beam"@beam@"locked onto"@LockedPawn,'KDebug');
 		}
 
@@ -341,13 +346,13 @@ simulated event Tick(float dt)
             EndTrace = StartTrace + TraceRange * X;
         }
 
-        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+        Other = BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
         if ( Other != None && Other != Instigator )
 			     EndEffect = HitLocation;
 		    else
 			     EndEffect = EndTrace;
 
-		    if ( Beam != None )	Beam.EndEffect = EndEffect;
+		    Beam.EndEffect = EndEffect;
 
 				if ( Role < ROLE_Authority ) return;
 		
@@ -402,7 +407,7 @@ simulated event Tick(float dt)
 													if (LockedPawn != None)
 														warn(self@"called takedamage with a linked pawn!!!");
 													else {
-														 AdjustedDamage = AdjustLinkDamage( NumLinks, Other, AltDamage );
+														 AdjustedDamage = AdjustLinkDamage( NumLinks, Other, AltDamage ) * BeamDamageScale;
 														 Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, MomentumTransfer*X, AltDamageType);
 														 //log(self@"Just before HealDamage to MyHospitaler="@MyHospitaler); 
 														// if (MyHospitaler!=None&&MyHospitaler.Health<MyHospitaler.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)&&!LockedPawn.IsInState('NeutralCore')))
@@ -469,17 +474,9 @@ simulated event Tick(float dt)
 					Beam.LinkColor = 0;
 			
 			Beam.Links = NumLinks;
-			if (OldAmbientSound == None)
-			{
-				OldAmbientSound = Owner.AmbientSound;
-				AmbientSound = BeamSounds[Min(Beam.Links,3)];
-			}
-			//AmbientSound = BeamSounds[Min(Beam.Links,3)];
-			//if (LinkTank != None)
-			bBeaming = true;
-			Soundvolume = FireSoundVolume;
-			//Owner.SoundPitch = Owner.Default.SoundPitch;
-			//Owner.SoundVolume = SentLinkVolume;
+			// Hum plays on the gun at the SoundVolume/SoundPitch in defaultproperties.
+			// Don't assign FireSoundVolume (256.0) here: SoundVolume is a byte and it wraps to 0 (silent).
+			AmbientSound = BeamSounds[Min(NumLinks,3)];
 			Beam.LinkedPawn = LockedPawn;
 			Beam.bHitSomething = (Other != None);
 			Beam.EndEffect = EndEffect;
@@ -523,10 +520,11 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 	// Sanity check
 	if (LockedPawn != Other)
 	{
-	    if (LockedPawn != None && MyHospitaler != None)
+	    // Take back exactly what AddLink() credited; the Hospitaler's links may have changed since
+	    if (SentLinks != 0)
 	    {
-			//log(self@"setlinkto"@other@"current"@LockedPawn,'KDebug');
-	        RemoveLink(1 + MyHospitaler.GetLinks(), Instigator);
+	        RemoveLink(SentLinks, MyHospitaler);
+	        SentLinks = 0;
 
 	        if (!bHealing)
 	        {
@@ -543,15 +541,13 @@ function SetLinkTo(Pawn Other, optional bool bHealing)
 
 	    if (LockedPawn != None)
 	    {
-			if (HospitalerLinkTurret(Owner) != None)
-			{
-		        if (!AddLink(1 + MyHospitaler.GetLinks(), Instigator))
-		        {
-		            bFeedbackDeath = true;
-		        }
-		        			//log(Level.TimeSeconds@Self@"Set Link Tank bLinking to TRUE in SetLinkTo"@Other,'KDebug');
-		        //MyHospitaler.bLinking = true;
-			}
+			// Link like a link gun carrying the Hospitaler's links (LinkFire uses 1 + Links). With the Hospitaler
+			// as Starter, LinkFire.AddLink refuses (crediting nothing) if the target's chain already feeds into it.
+			SentLinks = 1;
+			if (MyHospitaler != None)
+				SentLinks += MyHospitaler.Links;
+			if (!AddLink(SentLinks, MyHospitaler))
+				SentLinks = 0;
 	
 	        LockedPawn.PlaySound(MakeLinkSound, SLOT_None);
 	    }
@@ -659,78 +655,51 @@ function bool IsLinkable(Actor Other)
     return false;
 }
 
+// ============================================================================
+// BeamTrace
+// Beam trace that passes through active teammate Bastion/Fanatic/Hospitaler shields.
+// DamageScale is multiplied by ShieldPassDamageScale per shield passed.
+// Shields matched by name: no dependency on ShieldVehiclesOmni.
+// Traces run from the vehicle the gun is bone-attached to (Gun.Base, replicated to every client).
+// Native line checks skip their source actor, so the beam ignores its own vehicle's hull at no extra cost.
+// ============================================================================
+simulated static function Actor BeamTrace(ONSWeapon Gun, out Vector HitLocation, out Vector HitNormal, Vector End, Vector Start, out float DamageScale)
+{
+	local Actor Tracer, Other, Skipped[4];
+	local int i, n;
 
+	Tracer = Gun.Base;
+	if (Tracer == None)
+		Tracer = Gun;
+
+	DamageScale = 1.0;
+	Other = Tracer.Trace(HitLocation, HitNormal, End, Start, true);
+	while ( Other != None && n < ArrayCount(Skipped) && ONSWeapon(Other.Owner) != None
+		&& ONSWeapon(Other.Owner).Team == Gun.Team
+		&& (Other.IsA('BastionShield') || Other.IsA('FanaticShield') || HospitalerShield(Other) != None) )
+	{
+		Other.bBlockZeroExtentTraces = false;
+		Skipped[n] = Other;
+		n++;
+		DamageScale *= default.ShieldPassDamageScale;
+		Other = Tracer.Trace(HitLocation, HitNormal, End, HitLocation, true);
+	}
+
+	for (i = 0; i < n; i++)
+		Skipped[i].bBlockZeroExtentTraces = true;
+
+	return Other;
+}
 
 
 // ============================================================================
 // TraceFire
-// Spawn the beam and all but don't actually do any damage here
+// Spawn/refresh the beam only; its hits are traced every tick in Tick() via BeamTrace()
 // ============================================================================
 function TraceFire(Vector Start, Rotator Dir)
 {
-    local Vector X, End, HitLocation, HitNormal, RefNormal;
-    local Actor Other;
-    local ONSWeaponPawn WeaponPawn;
-    local Vehicle VehicleInstigator;
-    //local int Damage;
-    local bool bDoReflect;
-    local int ReflectNum;
-
-    MaxRange();
-
-    if ( bDoOffsetTrace )
-    {
-    	WeaponPawn = ONSWeaponPawn(Owner);
-	    if ( WeaponPawn != None && WeaponPawn.VehicleBase != None )
-    	{
-    		if ( !WeaponPawn.VehicleBase.TraceThisActor(HitLocation, HitNormal, Start, Start + vector(Dir) * (WeaponPawn.VehicleBase.CollisionRadius * 1.5)))
-				Start = HitLocation;
-		}
-		else
-			if ( !Owner.TraceThisActor(HitLocation, HitNormal, Start, Start + vector(Dir) * ( ONSWeaponPawn(Owner).VehicleBase.CollisionRadius * 1.5)))
-				Start = HitLocation;
-    }
-
-    ReflectNum = 0;
-    while ( true )
-    {
-        bDoReflect = false;
-        X = Vector(Dir);
-        End = Start + TraceRange * X;
-
-        //skip past vehicle driver
-        VehicleInstigator = Vehicle(Instigator);
-        if ( ReflectNum == 0 && VehicleInstigator != None && VehicleInstigator.Driver != None )
-        {
-        	//log(self@"TraceFire:Skipping Driver...");
-        	VehicleInstigator.Driver.bBlockZeroExtentTraces = false;
-        	Other = Trace(HitLocation, HitNormal, End, Start, true);
-        	VehicleInstigator.Driver.bBlockZeroExtentTraces = true;
-        }
-        else {
-        	//log(self@"TraceFire:Not Driver...");
-        	Other = Trace(HitLocation, HitNormal, End, Start, True);
-        }
-        
-        
-		// Don't actually do any damage here, just spawn the beam
-
-
-        SpawnBeamEffect(Start, Dir, HitLocation, HitNormal, ReflectNum);
-
-        if ( bDoReflect && ++ReflectNum < 4 )
-        {
-            //Log("reflecting off"@Other@Start@HitLocation);
-            Start	= HitLocation;
-            Dir		= Rotator(RefNormal); //Rotator( X - 2.0*RefNormal*(X dot RefNormal) );
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    NetUpdateTime = Level.TimeSeconds - 1;
+	SpawnBeamEffect(Start, Dir, Start, vect(0,0,0), 0);
+	NetUpdateTime = Level.TimeSeconds - 1;
 }
 
 // ============================================================================
@@ -787,7 +756,6 @@ defaultproperties
      AltDamage=18
      MakeLinkForce="LinkActivated"
      LinkFlexibility=0.550000
-     LinkVolume=240
      BeamSounds(0)=Sound'WeaponSounds.LinkGun.BLinkGunBeam1'
      BeamSounds(1)=Sound'WeaponSounds.LinkGun.BLinkGunBeam2'
      BeamSounds(2)=Sound'WeaponSounds.LinkGun.BLinkGunBeam3'
@@ -800,8 +768,9 @@ defaultproperties
      PitchBone="Object02"
      PitchUpLimit=12000
      PitchDownLimit=57000
+     // Muzzle bone already sits at the barrel tip and scales with DrawScale; WeaponFireOffset is unscaled
+     // world units past it (120 put the beam/plasma origin ~120uu beyond a ~143uu-long turret at 0.2).
      WeaponFireAttachmentBone="Muzzle"
-     WeaponFireOffset=120.000000
      RotationsPerSecond=0.500000
      FireInterval=0.350000
      AltFireInterval=0.120000
@@ -825,12 +794,16 @@ defaultproperties
      DrawScale=0.2000
      Skins(0)=Texture'IllyHospitalerSkins.Hospitaler.LinkTurret_skin2'
      Skins(1)=Texture'IllyHospitalerSkins.Hospitaler.LinkTurret_skin1'
-     SoundPitch=112
-     SoundRadius=512.000000
+     // Beam hum matches the stock link gun: Pawn plays it at 0.8*240/400/2 = 0.24, ONSWeapon at Scaling*240/255/2.
+     // Lower AmbientSoundScaling for a quieter hum; SoundRadius matches the Pawn falloff other players hear.
+     SoundVolume=240
+     AmbientSoundScaling=0.510000
+     SoundRadius=160.000000
      TransientSoundRadius=1024.000000
      SelfHealMultiplier = 1.0 // not used in hospitaler
      VehicleHealScore=250.0
      RangeExtPerLink=500
      bDoOffsetTrace=True
+     ShieldPassDamageScale=0.500000
 }
 

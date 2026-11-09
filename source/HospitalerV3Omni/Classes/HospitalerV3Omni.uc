@@ -138,7 +138,7 @@ event TakeDamage(int Damage, Pawn EventInstigator, vector HitLocation, vector Mo
 		return;
 
 	// don't take damage if should have been blocked by shield
-	if ( (WeaponPawns.Length > 2) && HospitalerShieldCannon(WeaponPawns[0].Gun).bShieldActive && (HospitalerShieldCannon(WeaponPawns[2].Gun).ShockShield != None) && (Momentum != vect(0,0,0))
+	if ( (WeaponPawns.Length > 2) && HospitalerShieldCannon(WeaponPawns[2].Gun).bShieldActive && (HospitalerShieldCannon(WeaponPawns[2].Gun).ShockShield != None) && (Momentum != vect(0,0,0))
 		&& (HitLocation != Location) && (DamageType != None) && (ClassIsChildOf(DamageType,class'WeaponDamageType') || ClassIsChildOf(DamageType,class'VehicleDamageType')) 
 		&& !HospitalerShieldCannon(WeaponPawns[2].Gun).ShockShield.TraceThisActor(ShieldHitLocation,ShieldHitNormal,HitLocation,HitLocation - 2000*Normal(Momentum)) )
 		return;

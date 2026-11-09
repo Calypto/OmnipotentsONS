@@ -165,6 +165,7 @@ state InstantFireMode
 		local bot B;
 		local bool bShouldStop, bIsHealingObjective;
 		local int AdjustedDamage;
+		local float BeamDamageScale;
 		local VampireTank3BeamEffect LB;
 		local DestroyableObjective HealObjective;
 		local Vehicle LinkedVehicle;
@@ -285,7 +286,7 @@ state InstantFireMode
 	            EndTrace = StartTrace + TraceRange * X;
 	        }
 
-	        Other = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+	        Other = class'LinkTank3Gun'.static.BeamTrace(self, HitLocation, HitNormal, EndTrace, StartTrace, BeamDamageScale);
 	        if ( Other != None && Other != Instigator )
 				EndEffect = HitLocation;
 			else
@@ -313,24 +314,17 @@ state InstantFireMode
 					}
 				*/
 				
-				// ----------------------------------------------------------------
-				// Relay link changes down the chain while locked on.
-				// Makes the tank count as a linker even when linkers join or leave
-				// AFTER the beam has already locked on (stock player chains get this
-				// for free via LinkFire.AddLink recursion; the tank's inbound linkers
-				// only arrive via VampireTank3.HealDamage, which never notifies the
-				// gun, so we refresh here instead).
-				// ----------------------------------------------------------------
-				if (LockedPawn != None && MyVampireTank.Links != LastLinksSent)
-				{
-					RemoveLink(1 + LastLinksSent, Instigator);
-					LastLinksSent = MyVampireTank.Links;
-					if (!AddLink(1 + LastLinksSent, Instigator))
-						bFeedbackDeath = true;
-				}
-				
 				return;
 			}
+	        // Relay changes in our exported links down an infantry link chain while locked on
+	        if (LockedPawn != None && !bFeedbackDeath && MyVampireTank.ExportLinks != LastLinksSent)
+	        {
+	        	RemoveLink(1 + LastLinksSent, Instigator);
+	        	LastLinksSent = MyVampireTank.ExportLinks;
+	        	if (!AddLink(1 + LastLinksSent, Instigator))
+	        		bFeedbackDeath = true;
+	        }
+
 	        if ( Other != None && Other != Instigator )
 	        {
 	            // target can be linked to
@@ -379,6 +373,7 @@ state InstantFireMode
 									//LinkGun.ConsumeAmmo(ThisModeNum, -AmmoPerFire);
 							}
 							else {
+								AdjustedDamage *= BeamDamageScale;
 								Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, Momentum*X, DamageType);
 								// heal itself
 								 if (MyVampireTank!=None&&MyVampireTank.Health<MyVampireTank.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)&&!ONSPowerCore(HealObjective).IsInState('NeutralCore')))
@@ -501,6 +496,7 @@ function Fire(Controller C)
 		local vector	dir, StartLocation;
 		local Actor		Victims;
 		local Pawn  VictimPawn;
+		local int InstigatorTeam;
 
 		NetUpdateTime = Level.TimeSeconds - 1;
 		//bFireMode = true;
@@ -511,7 +507,8 @@ function Fire(Controller C)
 
 		Shock = Spawn(class'VampireLightiningShockWave', Self,, StartLocation);
 		
-		if (Instigator.GetTeamNum()==0) {
+		InstigatorTeam = Instigator.GetTeamNum();
+		if (InstigatorTeam==0) {
 			//Red
 			 Shock.Emitters[1].ColorScale[0].Color = class'Canvas'.static.MakeColor( 204,0, 0);
        Shock.Emitters[1].ColorScale[1].Color = class'Canvas'.static.MakeColor( 204,0, 0);
@@ -556,10 +553,11 @@ function Fire(Controller C)
 				
 					VictimPawn = Pawn(Victims);
 				
-				//log("VictimPawn:"@ "Victim Team:" @ VictimPawn.Controller.GetTeamNum() @ "Instigator Team:" @ Instigator.GetTeamNum()  );
-					if (VictimPawn != None && VictimPawn.Controller != None 
-			   		 && VictimPawn.Controller.GetTeamNum() != Instigator.GetTeamNum()  // spare your team
-				 		&& (Victims.Role == ROLE_Authority) )
+				//log("VictimPawn:"@ "Victim Team:" @ VictimPawn.GetTeamNum() @ "Instigator Team:" @ InstigatorTeam  );
+					if (VictimPawn != None && VictimPawn.Health > 0 // skip corpses and vehicle wrecks
+						&& (VictimPawn.Controller != None || (Vehicle(Victims) != None && !Vehicle(Victims).IsVehicleEmpty())) // driverless vehicles still count if they have passengers
+						&& VictimPawn.GetTeamNum() != InstigatorTeam  // spare your team; vehicles report their own Team even without a driver
+						&& (Victims.Role == ROLE_Authority) )
 				 		// only does damage if there's instigators/controllers doesn't affect empty stuff. so no blast against empty vehicles.
 				  { // Handle Vehicles/Infantry (pawns)
 					//log("PawnVictims:" @ Victims.GetHumanReadableName() @ "DistScale:" @ DistScale );
@@ -637,6 +635,7 @@ function SetLinkTo(Pawn Other)
     if (LockedPawn != None && MyVampireTank != None)
     {
         RemoveLink(1 + LastLinksSent, Instigator);
+        bFeedbackDeath = false;
         MyVampireTank.bLinking = false;
     }
 
@@ -645,7 +644,7 @@ function SetLinkTo(Pawn Other)
 
     if (LockedPawn != None)
     {
-        LastLinksSent = MyVampireTank.Links;
+        LastLinksSent = MyVampireTank.ExportLinks;
         if (!AddLink(1 + LastLinksSent, Instigator))
         {
             bFeedbackDeath = true;

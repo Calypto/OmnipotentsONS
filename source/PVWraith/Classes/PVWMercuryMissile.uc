@@ -461,6 +461,8 @@ Hurt all actors within the specified radius.
 simulated function ApplyDamage(vector HitLocation, vector VDiff, bool bPenetrate, class<DamageType> DamageType, Pawn HeadshotPawn)
 {
 	local Vehicle TargetVehicle;
+	local ONSVehicle TargetONSVehicle;
+	local ONSWeaponPawn WeaponPawn;
 	local array<TVictimInfo> Victims;
 	local TVictimInfo VictimInfo;
 	local float dist;
@@ -561,20 +563,32 @@ simulated function ApplyDamage(vector HitLocation, vector VDiff, bool bPenetrate
 			}
 
 			// apply damage to vehicle drivers as well
-			if (Vehicle(Victims[i].Actor) != None && Vehicle(Victims[i].Actor).Health > 0) {
+			// Authority only: on clients the drivers are never ROLE_Authority (so nothing could be added),
+			// and WeaponPawns is built there by ONSWeaponPawn.PostNetReceive(), so it can hold None entries
+			// once a gunner pawn's actor channel closes. ProcessContact() never reaches this function on a
+			// client with Role == ROLE_Authority, so every actor here is authoritative and needs no Role check.
+			if (Role == ROLE_Authority) {
 				TargetVehicle = Vehicle(Victims[i].Actor);
-				VictimInfo.HN = vect(0,0,0);
-				VictimInfo.Actor = TargetVehicle.Driver;
-				if (!TargetVehicle.bRemoteControlled && VictimInfo.Actor != None && VictimInfo.Actor != LastTouched && VictimInfo.Actor != HurtWall && !VictimInfo.Actor.bCollideActors && VictimInfo.Actor.Role == ROLE_Authority) {
-					VictimInfo.HL = VictimInfo.Actor.Location;
-					Victims[Victims.Length] = VictimInfo;
-				}
-				if (ONSVehicle(TargetVehicle) != None) {
-					for (j = 0; j < ONSVehicle(TargetVehicle).WeaponPawns.Length; j++) {
-						VictimInfo.Actor = ONSVehicle(TargetVehicle).WeaponPawns[j].Driver;
-						if (!ONSVehicle(TargetVehicle).WeaponPawns[j].bCollideActors && !ONSVehicle(TargetVehicle).WeaponPawns[j].bRemoteControlled && VictimInfo.Actor != None && VictimInfo.Actor != LastTouched && VictimInfo.Actor != HurtWall && !VictimInfo.Actor.bCollideActors && VictimInfo.Actor.Role == ROLE_Authority) {
+				if (TargetVehicle != None && TargetVehicle.Health > 0) {
+					VictimInfo.HN = vect(0,0,0);
+					if (!TargetVehicle.bRemoteControlled) {
+						VictimInfo.Actor = TargetVehicle.Driver;
+						if (VictimInfo.Actor != None && VictimInfo.Actor != LastTouched && VictimInfo.Actor != HurtWall && !VictimInfo.Actor.bCollideActors) {
 							VictimInfo.HL = VictimInfo.Actor.Location;
 							Victims[Victims.Length] = VictimInfo;
+						}
+					}
+					TargetONSVehicle = ONSVehicle(TargetVehicle);
+					if (TargetONSVehicle != None) {
+						for (j = 0; j < TargetONSVehicle.WeaponPawns.Length; j++) {
+							WeaponPawn = TargetONSVehicle.WeaponPawns[j];
+							if (WeaponPawn != None && !WeaponPawn.bCollideActors && !WeaponPawn.bRemoteControlled) {
+								VictimInfo.Actor = WeaponPawn.Driver;
+								if (VictimInfo.Actor != None && VictimInfo.Actor != LastTouched && VictimInfo.Actor != HurtWall && !VictimInfo.Actor.bCollideActors) {
+									VictimInfo.HL = VictimInfo.Actor.Location;
+									Victims[Victims.Length] = VictimInfo;
+								}
+							}
 						}
 					}
 				}

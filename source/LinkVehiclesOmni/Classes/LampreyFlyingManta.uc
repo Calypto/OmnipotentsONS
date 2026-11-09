@@ -10,6 +10,10 @@ class LampreyFlyingManta extends ONSAttackCraft
 
 var bool bLinking;
 var int Links;
+var int ExportLinks;		// Links our link target is credited with
+var float LastLinkedTime;	// Last time a teammate's link beam healed us
+
+const LINK_DECAY_TIME = 0.250000;	// How long after the last teammate heal we keep counting linkers
 
 
 
@@ -17,6 +21,40 @@ replication
 {
     unreliable if (Role == ROLE_Authority)
         bLinking, Links;
+}
+
+
+// Teammates' link beams heal us every fire interval, so a recent heal means
+// someone is linking us and ResetLinks has something to count
+function bool HealDamage(int Amount, Controller Healer, class<DamageType> DamageType)
+{
+    if (Healer == None || Healer.bDeleteMe)
+        return false;
+
+    if (Healer != Controller && TeamLink(Healer.GetTeamNum()))
+        LastLinkedTime = Level.TimeSeconds;
+
+    return super.HealDamage(Amount, Healer, DamageType);
+}
+
+simulated function Tick(float DeltaTime)
+{
+    Super.Tick(DeltaTime);
+
+    if (Role == ROLE_Authority)
+        ResetLinks();
+}
+
+// Recount our linkers from the live link beams
+function ResetLinks()
+{
+    if (Level.TimeSeconds - LastLinkedTime > LINK_DECAY_TIME)
+    {
+        Links = 0;
+        ExportLinks = 0;
+    }
+    else
+        Links = class'LinkChain'.static.CountLinkers(self, ExportLinks);
 }
 
 

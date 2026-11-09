@@ -7,6 +7,7 @@ var() sound LinkedFireSound;
 
 var class<ONSTurretBeamEffect> BeamEffectClass[2];
 var float LinkMultiplier;
+var VampireTank3 BaseTank; // set on first use via Instigator (the weapon pawn): Instigator replicates to every client, Owner only to the gunner
 
 static function StaticPrecache(LevelInfo L)
 {
@@ -39,8 +40,6 @@ simulated function UpdatePrecacheMaterials()
 //do effects (muzzle flash, force feedback, etc) immediately for the weapon's owner (don't wait for replication)
 simulated event OwnerEffects()
 {
-	local int NumLinks;
-
 	if (!bIsRepeatingFF)
 	{
 		if (bIsAltFire)
@@ -52,13 +51,11 @@ simulated event OwnerEffects()
 
 	if (Role < ROLE_Authority)
 	{
-		if (ONSWeaponPawn(Owner) != None && VampireTank3(ONSWeaponPawn(Owner).VehicleBase) != None)
-			NumLinks = VampireTank3(ONSWeaponPawn(Owner).VehicleBase).GetLinks();
-		else
-			NumLinks = 0;
+		if (BaseTank == None && ONSWeaponPawn(Instigator) != None)
+			BaseTank = VampireTank3(ONSWeaponPawn(Instigator).VehicleBase);
 
 		// Swap out fire sound
-		if (NumLinks > 0)
+		if (BaseTank != None && BaseTank.Links > 0)
 			FireSoundClass = LinkedFireSound;
 		else
 			FireSoundClass = default.FireSoundClass;
@@ -70,8 +67,6 @@ simulated event OwnerEffects()
 			FireCountdown = FireInterval;
 
 		AimLockReleaseTime = Level.TimeSeconds + FireCountdown * FireIntervalAimLock;
-
-        FlashMuzzleFlash();
 
 		if (AmbientEffectEmitter != None)
 			AmbientEffectEmitter.SetEmitterStatus(true);
@@ -94,10 +89,9 @@ function TraceFire(Vector Start, Rotator Dir)
     local int Damage;
     local int NumLinks;
 
-	if (ONSWeaponPawn(Owner) != None && VampireTank3(ONSWeaponPawn(Owner).VehicleBase) != None)
-		NumLinks = VampireTank3(ONSWeaponPawn(Owner).VehicleBase).GetLinks();
-	else
-		NumLinks = 0;
+	// BaseTank is set in Fire, which always runs first
+	if (BaseTank != None)
+		NumLinks = BaseTank.Links;
 
     X = Vector(Dir);
     End = Start + TraceRange * X;
@@ -129,6 +123,9 @@ function TraceFire(Vector Start, Rotator Dir)
 
     HitCount++;
     LastHitLocation = HitLocation;
+    // Replicate HitCount/LastHitLocation this frame instead of on the next scheduled update (10 per second while manned).
+    // Clients spawn the beam when HitCount changes, so a late update delays the beam and a quick tap can lose it entirely.
+    NetUpdateTime = Level.TimeSeconds - 1;
     SpawnHitEffects(Other, HitLocation, HitNormal);
 }
 
@@ -148,20 +145,14 @@ state InstantFireMode
 {
     function Fire(Controller C)
     {
-		local int NumLinks;
-	
-		if (ONSWeaponPawn(Owner) != None && VampireTank3(ONSWeaponPawn(Owner).VehicleBase) != None)
-			NumLinks = VampireTank3(ONSWeaponPawn(Owner).VehicleBase).GetLinks();
-		else
-			NumLinks = 0;
-	
+		if (BaseTank == None && ONSWeaponPawn(Instigator) != None)
+			BaseTank = VampireTank3(ONSWeaponPawn(Instigator).VehicleBase);
+
 		// Swap out fire sound
-		if (NumLinks > 0)
+		if (BaseTank != None && BaseTank.Links > 0)
 			FireSoundClass = LinkedFireSound;
 		else
 			FireSoundClass = default.FireSoundClass;
-
-        FlashMuzzleFlash();
 
         if (AmbientEffectEmitter != None)
         {
@@ -180,22 +171,18 @@ state InstantFireMode
 	simulated function SpawnHitEffects(actor HitActor, vector HitLocation, vector HitNormal)
 	{
 		local ONSTurretBeamEffect Beam;
-		local int NumLinks;
 		local int BeamColor;
+		local vector BeamDir;
+		local Range BeamRange;
 
 		if (Level.NetMode != NM_DedicatedServer)
 		{
+			if (BaseTank == None && ONSWeaponPawn(Instigator) != None)
+				BaseTank = VampireTank3(ONSWeaponPawn(Instigator).VehicleBase);
 
-			if (ONSWeaponPawn(Owner) != None && VampireTank3(ONSWeaponPawn(Owner).VehicleBase) != None)
-				NumLinks = VampireTank3(ONSWeaponPawn(Owner).VehicleBase).GetLinks();
-			else
-				NumLinks = 0;
-
-			// Swap out fire sound
-			if (NumLinks > 0)
+			// Gold beam while linked
+			if (BaseTank != None && BaseTank.Links > 0)
 				BeamColor = 1;
-			else
-				BeamColor = 0;
 
 			if (Role < ROLE_Authority)
 			{
@@ -211,11 +198,12 @@ state InstantFireMode
     				PlayAnim('LeftFire');
     		}
 
-			Beam = Spawn(BeamEffectClass[BeamColor],,, WeaponFireLocation, rotator(HitLocation - WeaponFireLocation));
-			BeamEmitter(Beam.Emitters[0]).BeamDistanceRange.Min = VSize(WeaponFireLocation - HitLocation);
-			BeamEmitter(Beam.Emitters[0]).BeamDistanceRange.Max = VSize(WeaponFireLocation - HitLocation);
-			BeamEmitter(Beam.Emitters[1]).BeamDistanceRange.Min = VSize(WeaponFireLocation - HitLocation);
-			BeamEmitter(Beam.Emitters[1]).BeamDistanceRange.Max = VSize(WeaponFireLocation - HitLocation);
+			BeamDir = HitLocation - WeaponFireLocation;
+			BeamRange.Min = VSize(BeamDir);
+			BeamRange.Max = BeamRange.Min;
+			Beam = Spawn(BeamEffectClass[BeamColor],,, WeaponFireLocation, rotator(BeamDir));
+			BeamEmitter(Beam.Emitters[0]).BeamDistanceRange = BeamRange;
+			BeamEmitter(Beam.Emitters[1]).BeamDistanceRange = BeamRange;
 			Beam.SpawnEffects(HitLocation, HitNormal);
 		}
 	}
