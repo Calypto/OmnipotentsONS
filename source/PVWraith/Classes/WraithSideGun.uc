@@ -51,14 +51,33 @@ function Projectile SpawnProjectile(class<Projectile> ProjClass, bool bAltFire)
 }
 
 
+/**
+Owner-side fire effects, predicted on the client. Mirrors AttemptFire() so the
+fire sound/flash only plays when the server actually launches a rocket.
+The native tick only calls this when FireCountdown runs out while firing, so
+FireCountdown must stay positive while waiting for a reload.
+*/
 simulated event OwnerEffects()
 {
-	if (Level.NetMode == NM_Client && !bIsAltFire) {
-		if (RemainingShotCount > 0)
-			RemainingShotCount--;
+	if (bIsAltFire)
+		return; // no alt fire, AltFire() zooms (ClientVehicleCeaseFire() may still "start" it)
+
+	if (RemainingShotCount == 0) {
+		// Empty: the server holds fire until Timer() reloads a rocket, retry right then.
+		if (Role < ROLE_Authority)
+			FireCountdown = TimerRate - TimerCounter;
+		return;
+	}
+
+	if (Role < ROLE_Authority) {
+		RemainingShotCount--;
 		SetTimer(MissileReloadTime + FireInterval, true);
 	}
 	Super(ONSLinkableWeapon).OwnerEffects();
+
+	// Same extra delay as AttemptFire() after the last rocket.
+	if (RemainingShotCount == 0 && Role < ROLE_Authority)
+		FireCountdown += MissileReloadTime + 0.01;
 }
 
 

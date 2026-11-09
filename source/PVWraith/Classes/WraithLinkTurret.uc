@@ -183,17 +183,20 @@ function Projectile SpawnProjectile(class<Projectile> ProjClass, bool bAltFire)
 		FlashMuzzleFlash();
 
 		// Play firing noise
+		// Owner is the Wraith (ONSDualAttackCraft.PostNetBeginPlay(), keeps shots out of the hull),
+		// so PlayOwnedSound() from the gun would skip the driver and reach the gunner, who already
+		// played it in OwnerEffects(). Play it from the weapon pawn instead, which sits at the gun.
 		if (bAltFire) 	{
 			if (bAmbientAltFireSound)
 				AmbientSound = AltFireSoundClass;
 			else
-				PlayOwnedSound(AltFireSoundClass, SLOT_None, FireSoundVolume/255.0,, AltFireSoundRadius,, false);
+				Instigator.PlayOwnedSound(AltFireSoundClass, SLOT_None, FireSoundVolume/255.0,, AltFireSoundRadius,, false);
 		}
 		else 		{
 			if (bAmbientFireSound)
 				AmbientSound = FireSoundClass;
 			else
-				PlayOwnedSound(FireSoundClass, SLOT_None, FireSoundVolume/255.0,, FireSoundRadius,, false);
+				Instigator.PlayOwnedSound(FireSoundClass, SLOT_None, FireSoundVolume/255.0,, FireSoundRadius,, false);
 		}
 	}
 
@@ -201,6 +204,31 @@ function Projectile SpawnProjectile(class<Projectile> ProjClass, bool bAltFire)
 		return P1;
 	else
 		return P2;
+}
+
+/**
+On the server the Wraith owns this gun, and Owner only replicates to the driver.
+The native repeat-fire OwnerEffects() call needs the gunner's weapon pawn as Owner,
+so set it on the gunner's client (server keeps the Wraith for hull pass-through).
+*/
+simulated function ClientStartFire(Controller C, bool bAltFire)
+{
+	if (Owner != Instigator && Role < ROLE_Authority)
+		SetOwner(Instigator);
+
+	Super.ClientStartFire(C, bAltFire);
+}
+
+/**
+Gunner's client: drop the predicted beam hum right away, CeaseFire() does the same
+on the server for either fire mode. Also reached via ClientKDriverLeave() on exit/death.
+*/
+simulated function ClientStopFire(Controller C, bool bWasAltFire)
+{
+	if (Role < ROLE_Authority)
+		AmbientSound = None;
+
+	Super.ClientStopFire(C, bWasAltFire);
 }
 
 simulated event OwnerEffects()
@@ -213,7 +241,14 @@ simulated event OwnerEffects()
 	}
 	ShakeView();
 
-	if (Role < ROLE_Authority && !bIsAltFire) 	{
+	if (Role < ROLE_Authority) 	{
+		// The beam hum is the server's AmbientSound, which only reaches the gunner after a
+		// round trip plus the gun's next net update, so start it here like AltFire() does.
+		if (bIsAltFire) {
+			AmbientSound = AltFireSoundClass;
+			return;
+		}
+		AmbientSound = None; // primary fire ends the beam, as in InstantFireMode.Fire()
 		FireCountdown = FireInterval;
 		AimLockReleaseTime = Level.TimeSeconds + FireCountdown * FireIntervalAimLock;
 		FlashMuzzleFlash();
@@ -557,6 +592,7 @@ state InstantFireMode
 		//{
 		  //Log("Wraith-ProjectileFire");
 			bIsFiringBeam = False;
+			AmbientSound = None; // beam hum would otherwise keep playing until a fire button is released
 			if (Team < TeamProjectileClasses.Length && TeamProjectileClasses[Team] != None)
 				SpawnProjectile(TeamProjectileClasses[Team], False);
 			else
@@ -566,12 +602,12 @@ state InstantFireMode
 	function AltFire(Controller C)
 	{
 		//Log("Wraith-InstantFire-AltFire");
+		// Only when the hum starts (also after CeaseFire() cleared it): replicate now instead of
+		// at the gun's next net update (NetUpdateFrequency 10 while manned, up to 0.1s late).
+		if (AmbientSound != AltFireSoundClass)
+			NetUpdateTime = Level.TimeSeconds - 1;
 		AmbientSound = AltFireSoundClass;
-    bIsFiringBeam = True;
-
-		// NetUpdateTime = Level.TimeSeconds - 1;
-		// Why was this messing with NetUpdateTime?!
-		// Doesn't seem to change anything and not seen it in other weapons.
+		bIsFiringBeam = True;
 	}
 
 	function WeaponCeaseFire(Controller C, bool bWasAltFire)
