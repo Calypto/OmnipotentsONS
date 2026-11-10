@@ -103,17 +103,13 @@ var bool bBeaming;							// True if utilizing alt-fire
 var CSTrickboardBeamEffect Beam;
 var HudCTeamDeathMatch OurHud;
 
-var Pawn ServerLastDriver, ClientLastDriver;
 var CSTrickboardCollision PawnCollision;
 
-enum ETimerFunc
-{
-    ETimer_None,
-    ETimer_Boosting,
-    ETimer_PostAttach
-};
+// Bone controllers are local to each machine's MeshInstance and never replicate,
+// so every non-dedicated machine poses its own copy of the driver from Tick.
+var Pawn PosedDriver;           // driver pawn the boarding pose was last applied to
+var Mesh PosedDriverMesh;       // its mesh at that time (LinkMesh discards bone controllers)
 
-var ETimerFunc TimerFunc;
 var float TimeStep, TotalTime;
 var int TickCount;
 
@@ -124,7 +120,10 @@ var float KickflipRadius;
 var Sound kickflipSounds[2];
 var Sound spinSounds[2];
 
-var int DisabledTickCount;
+// Rise (jump/crouch input) exists only on the server and the driving client.
+// Server mirrors "holding crouch" here so other clients can run the crouch charge,
+// super jump and air duck locally in CheckJumpDuck.
+var bool bRepDuck;
 
 ////////////////////////////////////////////////////
 
@@ -145,14 +144,20 @@ replication
     reliable if (Role==ROLE_Authority)
         DoSpinAttack;
 
-    reliable if (Role==ROLE_Authority)
-        ServerLastDriver;
+    // the driving client has the real Rise
+    reliable if (bNetDirty && !bNetOwner && Role == ROLE_Authority)
+        bRepDuck;
 }
 
 simulated function PostBeginPlay()
 {
     super.PostBeginPlay();
     BoostRechargeCounter=BoostRechargeTime;
+
+    // kickflip moves the dust offsets on every machine, so every machine needs the originals
+    // (this used to be captured in KDriverEnter, i.e. on the server only)
+    BikeDustOffsetTemp[0] = BikeDustOffset[0];
+    BikeDustOffsetTemp[1] = BikeDustOffset[1];
 }
 
 Function RawInput(float DeltaTime,
@@ -209,30 +214,9 @@ simulated function EnableAfterburners(bool bEnable)
 
 simulated event Timer()
 {
-    // there's only one timer func so switch based on need
-    switch(TimerFunc)
-    {
-        case ETimer_Boosting:
-            // when boost time exceeds time limit, turn it off
-            bBoost = false;
-            EnableAfterburners(bBoost);
-            break;
-
-        case ETimer_PostAttach:
-            if(Driver != None)
-            {
-                // When bDrawDriverInTP is true, cull get set to 5000
-                // but for hoverboard we don't want the driver to disappear beyond 5000
-                Driver.CullDistance = 0;
-
-                // after calling attach driver, StartDriving calls 
-                // LoopAnim() with the 'Driving' animation, so in this timer func
-                // we set to boarding animation instead
-                // it's not a real animation so need to call it here
-                SetDriverPositionBoarding(Driver);
-            }
-            break;
-    }
+    // when boost time exceeds time limit, turn it off
+    bBoost = false;
+    EnableAfterburners(false);
 }
 
 simulated function BoostTick(float DT)
@@ -247,10 +231,7 @@ simulated function BoostTick(float DT)
         // if we just enabled afterburners, set the timer
         // to turn them off after set time has expired
         if (bBoost)
-        {
-            TimerFunc = ETimer_Boosting;
             SetTimer(BoostTime, false);
-        }
     }
 
     if (Role == ROLE_Authority)
@@ -363,8 +344,8 @@ simulated event DrivingStatusChanged()
 	local int i;
 
     // override default behavior here
-    // normally tick was disabled if not driving but we need tick
-    // to continue some to fix twisted body
+    // override default behavior here: Tick is not disabled when bDriving goes false,
+    // so its next pass can reset board tricks before disabling itself (see top of Tick)
     if(bDriving)
         Enable('Tick');
 
@@ -522,81 +503,57 @@ simulated function SetDriverPositionOriginal(Pawn P)
     P.SetBoneRotation('Bip01 R Foot', rot(0, 0, 0), 1.0);
     P.SetBoneRotation('Bip01 L Toe0', rot(0, 0, 0), 1.0);
     P.SetBoneRotation('Bip01 R Toe0', rot(0, 0, 0), 1.0);
+
+    // crouch charge / jump / kickflip move Bip01; drop that offset too (alpha 0 = no translation)
+    P.SetBoneLocation('Bip01', vect(0, 0, 0), 0.0);
 }
 
-function KDriverEnter (Pawn P) 
+function KDriverEnter (Pawn P)
 {
     P.ReceiveLocalizedMessage(class'CSTrickboard.CSTrickboardEnterMessage', 0);
-    Super.KDriverEnter(P); 
-    SetDriverPositionBoarding(P); 
-    P.CullDistance = 0;
-    ServerLastDriver = None;
+    Super.KDriverEnter(P);
+    // boarding pose and CullDistance are applied per machine in Tick
     spinAttack = 0;
     BoostRechargeCounter = 0;
     DoSpinAttack = true; // do a kickflip on enter
     OldDoSpinAttack = false;
-    BikeDustOffsetTemp[0] = BikeDustOffset[0];
-    BikeDustOffsetTemp[1] = BikeDustOffset[1];
 }
 
-simulated function ClientKDriverEnter(PlayerController pc)
+// board tricks are cut short by ResetBoardTricks from Tick once bDriving is false
+function bool KDriverLeave (bool bForceLeave)
 {
-    super.ClientKDriverEnter(pc);
-    if(pc != None && pc.Pawn != None)
-        SetDriverPositionBoarding(pc.Pawn); 
-}
-
-function bool KDriverLeave (bool bForceLeave) 
-{
-    local Pawn tempDriver;
-    tempDriver = Driver; // use variable to hold Driver because Driver is destroyed after KDriverLeave
-
-    self.SetBoneRotation('root', rot(0, 0, 0), 1.0);
-    spinAttack = 0;
-    DoSpinAttack = false;
-    OldDoSpinAttack = false;    
-    BikeDustOffset[0] = BikeDustOffsetTemp[0];
-    BikeDustOffset[1] = BikeDustOffsetTemp[1];
-
     // can't exit if there is something colliding with
     if(PawnCollision != None)
         PawnCollision.SetCollision(false,false);
 
-    if (Super.KDriverLeave(bForceLeave)) 
-    {
-        ServerLastDriver = tempDriver;
-        SetDriverPositionOriginal(tempDriver); // resets the position to the original position only if he could leave
+    // on success the driver's pose is undone in DetachDriver (runs on every machine)
+    if (Super.KDriverLeave(bForceLeave))
         return true;
-    } 
-    else 
-    {
-        // exit failed, restore collision
-        if(PawnCollision != None)
-            PawnCollision.SetCollision(true,true);
 
-        return false;
-    }
+    // exit failed, restore collision
+    if(PawnCollision != None)
+        PawnCollision.SetCollision(true,true);
+
+    return false;
 }
 
-// called for playercontrollers
-simulated function ClientKDriverLeave(PlayerController pc)
+// Cut any board trick short and clear the crouch charge. Runs on every machine once the
+// board has no driver (see top of Tick), so the board ends level everywhere.
+simulated function ResetBoardTricks()
 {
-    Super.ClientKDriverLeave(pc);
-
-    self.SetBoneRotation('root', rot(0, 0, 0), 1.0);
-    // the pc.pawn was swapped with the vehicle pawn (pc controls vehicle still)
-    // player pawn doesn't get restored until unpossessed called later
-    if(pc != none && Vehicle(pc.Pawn) != None)
-        SetDriverPositionOriginal(Vehicle(pc.Pawn).Driver); // resets the position to the original position only if he could leave
-}
-
-// called for other controllers (bot etc)
-simulated function ClientClearController()
-{
-    super.ClientClearController();
-    self.SetBoneRotation('root', rot(0, 0, 0), 1.0);
-    if(Controller != none && Controller.Pawn != None)
-        SetDriverPositionOriginal(Controller.Pawn);
+    spinAttack = 0;
+    superJumpCount = 0;
+    DoSpinAttack = false;
+    OldDoSpinAttack = false;
+    bRepDuck = false;
+    bHoldingDuck = false;
+    bDuckReleased = true;   // no pending super jump on the next entry
+    bPlayDuckSound = false;
+    jumpMult = 1000;
+    JumpDuration = JumpDuration0;
+    SetBoneRotation('root', rot(0, 0, 0), 1.0);
+    BikeDustOffset[0] = BikeDustOffsetTemp[0];
+    BikeDustOffset[1] = BikeDustOffsetTemp[1];
 }
 
 simulated function PlayCustomAnim (string animName, int currFrame)
@@ -703,6 +660,17 @@ simulated function Tick(float DeltaTime)
    local vector bodyLoc;
    local float    gravity;
 
+    // Board tricks are simulated on every machine. Once the board has no driver (exit, or
+    // driver death, which doesn't call DrivingStatusChanged on the server), cut them short
+    // everywhere and stop ticking like a stock vehicle. A fixed 60-tick keep-alive used to let
+    // them play out, but at high frame rates it ran out mid-kickflip and left the board angled.
+    if (!bDriving)
+    {
+        ResetBoardTricks();
+        Disable('Tick');
+        return;
+    }
+
    // DT can vary, get the average DT over 10000 ticks
    TotalTime += DeltaTime;
    timestep = TotalTime / TickCount;
@@ -719,6 +687,23 @@ simulated function Tick(float DeltaTime)
    gravity = -timestep;
 
     Super.Tick(DeltaTime);
+
+    // Boarding pose, applied on every machine that renders the driver.
+    // Wait for DrivenVehicle == self so StartDriving has already run (it plays the seated
+    // DriveAnim, resets Bip01 via SetTwistLook and sets CullDistance = 5000), then re-apply when:
+    // - a different pawn is driving
+    // - the mesh changed: on clients xPawn.Setup -> LinkMesh can run after StartDriving
+    //   and its new MeshInstance drops all bone controllers
+    // - CullDistance is non-zero: StartDriving ran again (fast exit and re-entry)
+    if (Level.NetMode != NM_DedicatedServer && Driver != None && Driver.DrivenVehicle == self
+        && (Driver != PosedDriver || Driver.Mesh != PosedDriverMesh || Driver.CullDistance != 0))
+    {
+        // no 5000uu cull for the rider; CullDistance doesn't replicate, so set it here too
+        Driver.CullDistance = 0;
+        SetDriverPositionBoarding(Driver);
+        PosedDriver = Driver;
+        PosedDriverMesh = Driver.Mesh;
+    }
 
     // *** Custom animations ***
     if ( Level.NetMode != NM_DedicatedServer && !bDropDetail && bAdjustDriversHead && bDrawDriverinTP && (Driver != None) && (Driver.HeadBone != '')) 
@@ -774,7 +759,9 @@ simulated function Tick(float DeltaTime)
 	{
 		JumpCountdown = JumpDuration;
         OldDoBikeJump = DoBikeJump;
-        if (Controller != Level.GetLocalPlayerController())
+        // CheckJumpDuck already spawned the effect (and set LastJumpTime) wherever it ran the
+        // jump itself: driving client, server, and other clients for super jumps (bRepDuck)
+        if (Controller != Level.GetLocalPlayerController() && Level.TimeSeconds - LastJumpTime > 0.2)
         {
             JumpEffect = Spawn(class'CSTrickboardJumpEffect');
             JumpEffect.SetBase(Self);
@@ -982,37 +969,10 @@ simulated function Tick(float DeltaTime)
     // do tick logic related to boosting
     BoostTick(DeltaTime);
 
-    // on clients, if driver exited, reset the driver bones
-    // this is needed here because rep functions only get called
-    // on net owners.  This is for everybody not the net owner
-    if(Role < ROLE_Authority && ServerLastDriver != ClientLastDriver)
-    {
-        if(ServerLastDriver != None)
-        {
-            SetDriverPositionOriginal(ServerLastDriver);
-        }
-
-        ClientLastDriver = ServerLastDriver;
-    }
-
     // pawncollision can get moved sometimes
     // force it to always be centered on board
     if(PawnCollision != None)
         PawnCollision.SetRelativeLocation(vect(0,0,44));
-
-    // normally tick gets disabled if bDriving changes to false
-    // in DrivingStatusChanged() function.  
-    // So instead we leave tick going, count up to 60 ticks, then 
-    // finally disable tick.  This allows the tick logic to work 
-    // which untwists the client pawns
-    if(bDriving)
-        DisabledTickCount=0;
-    else
-    {
-        DisabledTickCount++;
-        if(DisabledTickCount > 60)
-            Disable('Tick');
-    }
 }
 
 function VehicleCeaseFire(bool bWasAltFire)
@@ -1040,6 +1000,21 @@ simulated function CheckJumpDuck()
 	local int i;
 	local rotator legRot;
     local vector bodyLoc;
+    local float DuckRise;
+
+    // Rise is only known on the server and the driving client; other clients get just
+    // the crouch part of it (no normal jumps: their effect comes from the DoBikeJump handler)
+    if (Role == ROLE_SimulatedProxy)
+    {
+        if (bRepDuck)
+            DuckRise = -1;
+    }
+    else
+    {
+        DuckRise = Rise;
+        if (Role == ROLE_Authority && bRepDuck != (Rise < 0))
+            bRepDuck = !bRepDuck;
+    }
 
 	KP = KarmaParams(KParams);
 
@@ -1052,7 +1027,7 @@ simulated function CheckJumpDuck()
 	}
 
 	// If we are on the ground, and press Rise, and we not currently in the middle of a jump, start a new one.
-    if (JumpCountdown <= 0.0 && Rise > 0 && bOnGround && !bHoldingDuck && Level.TimeSeconds - JumpDelay >= LastJumpTime)
+    if (JumpCountdown <= 0.0 && DuckRise > 0 && bOnGround && !bHoldingDuck && Level.TimeSeconds - JumpDelay >= LastJumpTime)
     {
         PlaySound(JumpSound,,1.0);
 
@@ -1071,10 +1046,10 @@ simulated function CheckJumpDuck()
 
     	LastJumpTime = Level.TimeSeconds;
     }
-    else if (Rise < 0 && bOnGround) 
+    else if (DuckRise < 0 && bOnGround)
     {
         // gel: this makes the Board jump higher the longer you hold crouch
-        if (!bHoldingDuck) 
+        if (!bHoldingDuck)
         {
             bHoldingDuck = true;
         }
@@ -1082,45 +1057,52 @@ simulated function CheckJumpDuck()
         bPlayDuckSound = false;
         //jumpMult += 15;
         jumpMult += 45 * timestep;
-        if (jumpMult > 2000) 
+        if (jumpMult > 2000)
         {
            jumpMult = 2000;
         }
-        legRot.Pitch = 8500;
-        legRot.Yaw = -5200 + (jumpMult-1000)*9;
-        legRot.Roll = -3000;
-        Driver.SetBoneRotation('Bip01 L Thigh', legRot, 0.0);
-        legRot.Yaw = -5200 + (jumpMult-1000)*6;
-        legRot.Pitch = -8500 + (jumpMult-1000)*6;
-        Driver.SetBoneRotation('Bip01 R Thigh', legRot, 0.0);
-        legRot.Pitch = 0;
-        legRot.Yaw = -10000 - (jumpMult-1000)*10;
-        legRot.Roll = -8000;
-        Driver.SetBoneRotation('Bip01 L Calf', legRot, 0.0);
-        legRot.Roll = 8000;
-        Driver.SetBoneRotation('Bip01 R Calf', legRot, 1.0);
-        legRot.Pitch = -6000;
-        legRot.Yaw = 15000 + (jumpMult-1000)*10;
-        legRot.Roll = 0;
-        Driver.SetBoneRotation('Bip01 L Foot', rot(-6000, 15000, 0), 1.0);
-        legRot.Pitch = 5000;
-        Driver.SetBoneRotation('Bip01 R Foot', rot(5000, 15000, 0), 1.0);
 
-        bodyLoc.X = 0;
-        bodyLoc.Y = 0;
-        bodyLoc.Z = -(jumpMult-1000) / 24;
-        Driver.SetBoneLocation('Bip01', bodyLoc, 1.0);
+        // crouch pose (Driver can still be None on clients right after entry)
+        if (Level.NetMode != NM_DedicatedServer && Driver != None)
+        {
+            legRot.Pitch = 8500;
+            legRot.Yaw = -5200 + (jumpMult-1000)*9;
+            legRot.Roll = -3000;
+            Driver.SetBoneRotation('Bip01 L Thigh', legRot, 0.0);
+            legRot.Yaw = -5200 + (jumpMult-1000)*6;
+            legRot.Pitch = -8500 + (jumpMult-1000)*6;
+            Driver.SetBoneRotation('Bip01 R Thigh', legRot, 0.0);
+            legRot.Pitch = 0;
+            legRot.Yaw = -10000 - (jumpMult-1000)*10;
+            legRot.Roll = -8000;
+            Driver.SetBoneRotation('Bip01 L Calf', legRot, 0.0);
+            legRot.Roll = 8000;
+            Driver.SetBoneRotation('Bip01 R Calf', legRot, 1.0);
+            legRot.Pitch = -6000;
+            legRot.Yaw = 15000 + (jumpMult-1000)*10;
+            legRot.Roll = 0;
+            Driver.SetBoneRotation('Bip01 L Foot', rot(-6000, 15000, 0), 1.0);
+            legRot.Pitch = 5000;
+            Driver.SetBoneRotation('Bip01 R Foot', rot(5000, 15000, 0), 1.0);
 
+            bodyLoc.X = 0;
+            bodyLoc.Y = 0;
+            bodyLoc.Z = -(jumpMult-1000) / 24;
+            Driver.SetBoneLocation('Bip01', bodyLoc, 1.0);
+        }
     }
 
-    else if (DuckCountdown <= 0.0 && (Rise < 0 || (bWeaponIsAltFiring && spinAttack <= 0)))
+    else if (DuckCountdown <= 0.0 && (DuckRise < 0 || (bWeaponIsAltFiring && spinAttack <= 0)))
     {
         if (!bHoldingDuck)
         {
             bHoldingDuck = True;
             bPlayDuckSound = true;
-            DuckEffect = Spawn(class'CSTrickboardAttackEffect');
-            DuckEffect.SetBase(Self);
+            if (Level.NetMode != NM_DedicatedServer)
+            {
+                DuckEffect = Spawn(class'CSTrickboardAttackEffect');
+                DuckEffect.SetBase(Self);
+            }
 
             if ( AIController(Controller) != None )
     			Rise = 0;
@@ -1169,11 +1151,12 @@ simulated function CheckJumpDuck()
         legRotRTemp = 0;
         armRotRTemp = 0;
 
-        SetDriverPositionBoarding(Driver);
+        if (Level.NetMode != NM_DedicatedServer)
+            SetDriverPositionBoarding(Driver);
     }
-    else if (bPlayDuckSound) 
+    else if (bPlayDuckSound)
     {
-        if(Rise < 0 && !bOnGround && Velocity.Z > 0)
+        if(DuckRise < 0 && !bOnGround && Velocity.Z > 0)
             PlaySound(DuckSound,,1.0);
         else
             PlaySound(spinSounds[rand(2)],,1.0);
@@ -1333,11 +1316,11 @@ simulated function AttachDriver(Pawn P)
         PawnCollision.SetBase(self);
         PawnCollision.SetCollision(true,true);
         PawnCollision.SetRelativeLocation(vect(0,0,44));
-        TimerFunc = ETimer_PostAttach;
-        SetTimer(0.5, false);
     }
 }
 
+// called from Pawn.StopDriving on every machine (on clients via native PostNetReceive
+// when DrivenVehicle replicates as None), so this is the one place to undo the pose
 simulated function DetachDriver(Pawn P)
 {
     super.DetachDriver(P);
@@ -1347,8 +1330,26 @@ simulated function DetachDriver(Pawn P)
         PawnCollision.Destroy();
     }
 
-    if(P != None && Vehicle(P) != None)
-        SetDriverPositionOriginal(Vehicle(P).Driver);
+    if(P != None && Level.NetMode != NM_DedicatedServer)
+    {
+        SetDriverPositionOriginal(P);
+
+        // StopDriving restores native movement anims, but they only replace the looping
+        // DriveAnim on a state change. A rider who boarded standing still is still bIsIdle,
+        // so UpdateOnGround would never call PlayIdle and the seated anim would stay.
+        P.bIsIdle = false;
+
+        if(P == PosedDriver)
+            PosedDriver = None;
+    }
+}
+
+// while the rider's hit box (PawnCollision) collides, radius damage already hits it
+// and gets relayed to the driver, so don't hurt the driver a second time here
+function DriverRadiusDamage(float DamageAmount, float DamageRadius, Controller EventInstigator, class<DamageType> DamageType, float Momentum, vector HitLocation)
+{
+    if(PawnCollision == None || !PawnCollision.bCollideActors)
+        super.DriverRadiusDamage(DamageAmount, DamageRadius, EventInstigator, DamageType, Momentum, HitLocation);
 }
 
 event TakeImpactDamage(float AccelMag)

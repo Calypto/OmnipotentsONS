@@ -1,5 +1,12 @@
-
 CSTrickboard 
+
+1.2
+- No longer get teamkilled by nukes
+- Fix splash damage hitting driver twice
+- Fix driver getting culled after 5000uu
+- Fix the driver appearing as seated for observers online, and other missing animations
+- Fix sunken body when getting off while crouched
+- Fix dust disappearing after a kickflip
 
 1.1
 - remove 5000uu cull distance on driver rendering

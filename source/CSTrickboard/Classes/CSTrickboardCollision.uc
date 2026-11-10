@@ -10,6 +10,30 @@ event TakeDamage(int Damage, Pawn EventInstigator, vector HitLocation, vector Mo
         Vehicle(Owner).Driver.TakeDamage(Damage, EventInstigator, HitLocation, Momentum, DamageType);
 }
 
+// report the board's team (we are never possessed, so our own Team stays 255/neutral),
+// so team-filtered radius damage treats us like the board and its rider
+simulated function int GetTeamNum()
+{
+    local Vehicle V;
+
+    V = Vehicle(Owner);
+    if (V != None)
+        return V.GetTeamNum();
+
+    return Team;
+}
+
+// relay the delayed damage instigator to the driver along with the damage,
+// so friendly fire still applies when the shooter is already dead
+function SetDelayedDamageInstigatorController(Controller C)
+{
+    local Vehicle V;
+
+    V = Vehicle(Owner);
+    if (V != None && V.Driver != None)
+        V.Driver.SetDelayedDamageInstigatorController(C);
+}
+
 function Pawn CheckForHeadShot(Vector loc, Vector ray, float AdditionalScale)
 {
     if(Owner != None && Vehicle(Owner) != None)
