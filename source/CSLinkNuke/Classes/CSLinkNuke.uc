@@ -65,6 +65,67 @@ simulated function SuperMaxOutAmmo()
 {
 }
 
+function bool IsSameTeamForHeal(Actor Victim)
+{
+    if (Instigator == None)
+        return false;
+
+    if (Pawn(Victim) != None)
+        return Pawn(Victim).GetTeamNum() == Instigator.GetTeamNum();
+
+    if (ONSVehicle(Victim) != None)
+        return ONSVehicle(Victim).GetTeamNum() == Instigator.GetTeamNum();
+
+    if (ONSManualGunPawn(Victim) != None)
+        return ONSManualGunPawn(Victim).GetTeamNum() == Instigator.GetTeamNum();
+
+    return false;
+}
+
+function HealFallbackRadius(float Radius, vector HitLocation)
+{
+    local Actor Victim;
+    local Actor HealedNode;
+    local bool bSameTeam;
+
+    foreach VisibleCollidingActors(class'Actor', Victim, Radius, HitLocation)
+    {
+        bSameTeam = IsSameTeamForHeal(Victim);
+
+        if (Victim == None)
+            continue;
+
+        if (bHealNodes && HealedNode == None && Victim.IsA('ONSPowerNode'))
+        {
+            Spawn(class'CSLinkNuke.CSLinkNukeNodeHealer', Victim);
+            HealedNode = Victim;
+        }
+        else if (bHealNodes && HealedNode == None
+            && Victim.IsA('ONSPowerNodeEnergySphere'))
+        {
+            Spawn
+            (
+                class'CSLinkNuke.CSLinkNukeNodeHealer',
+                ONSPowerNodeEnergySphere(Victim).PowerNode
+            );
+            HealedNode = Victim;
+        }
+        else if (bHealVehicles && bSameTeam && Victim.IsA('Vehicle'))
+        {
+            Spawn(class'CSLinkNuke.CSLinkNukeVehicleHealer', Victim);
+        }
+        else if (bHealVehicles && bSameTeam
+            && Victim.IsA('ONSManualGunPawn'))
+        {
+            Spawn(class'CSLinkNuke.CSLinkNukeTurretHealer', Victim);
+        }
+        else if (bHealPlayers && bSameTeam && Victim.IsA('Pawn'))
+        {
+            Spawn(class'CSLinkNuke.CSLinkNukePlayerHealer', Victim);
+        }
+    }
+}
+
 defaultproperties
 {
      FireModeClass(0)=Class'CSLinkNuke.CSLinkNukeFire'

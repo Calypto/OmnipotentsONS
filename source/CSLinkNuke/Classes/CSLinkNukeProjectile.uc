@@ -23,6 +23,10 @@ var() bool bHealPlayers;
 var() bool bHealVehicles;
 var() int NodeDamage;
 
+// Fraction of damage/momentum lost at the edge of DamageRadius (linear from the
+// victim's collision edge). 0 = full damage everywhere, 1 = stock HurtRadius falloff.
+var() float DamageFalloff;
+
 var actor HurtNode;
 
 simulated function Destroyed()
@@ -36,21 +40,27 @@ simulated function Destroyed()
     Super.Destroyed();
 }
 
-simulated function PostBeginPlay()
+// Config must be read here, not in PostBeginPlay. If the projectile spawns already
+// overlapping something (e.g. fired at your feet while standing on a power node),
+// SpawnActor's encroachment check calls Touch -> ProcessTouch -> Explode BEFORE
+// PostBeginPlay runs. BeginPlay is the last event that runs ahead of that check.
+// Actor.BeginPlay is empty and Projectile doesn't override it, so no Super call.
+simulated function BeginPlay()
 {
-    local vector Dir;
-	if ( Level.NetMode != NM_DedicatedServer)
-	{
-		SmokeTrail = Spawn(class'RocketTrailSmoke',self);
-		Corona = Spawn(class'RocketCorona',self);
-	}
-
-
 	bHealNodes = class'MutUseLinkNuke'.default.bHealNodes;
 	bHealPlayers = class'MutUseLinkNuke'.default.bHealPlayers;
 	bHealVehicles = class'MutUseLinkNuke'.default.bHealVehicles;
-    CoreDamage = class'MutUseLinkNuke'.default.CoreDamage;
-    NodeDamage = class'MutUseLinkNuke'.default.NodeDamage;
+	CoreDamage = class'MutUseLinkNuke'.default.CoreDamage;
+	NodeDamage = class'MutUseLinkNuke'.default.NodeDamage;
+	// Projectile.PostBeginPlay sets this too, but too late for a spawn-time explosion
+	// (DriverRadiusDamage bails out without it).
+	if ( Instigator != None )
+		InstigatorController = Instigator.Controller;
+}
+
+simulated function PostBeginPlay()
+{
+    local vector Dir;
 
     Dir = vector(Rotation);
 	Velocity = speed * Dir;
@@ -60,6 +70,28 @@ simulated function PostBeginPlay()
 	}
 
 	Super.PostBeginPlay();
+}
+
+// Trail/corona are spawned here rather than in PostBeginPlay: this runs after
+// PostBeginPlay on the server/standalone, and after the initial replicated properties
+// on net clients, so bHidden (set only by Dying.BeginState) reliably tells whether the
+// projectile already exploded during Spawn (point-blank).
+// Actor.PostNetBeginPlay is empty and Projectile doesn't override it, so no Super call.
+simulated function PostNetBeginPlay()
+{
+	if ( bHidden )
+	{
+		// The server exploded it before this client ever saw it, so the client copy never
+		// runs Explode itself. SpawnEffects' PlaySound is local-only (called from a
+		// simulated function), so the client has to play the sound and sphere itself.
+		if ( Role < ROLE_Authority )
+			SpawnEffects(Location, vect(0,0,1));
+	}
+	else if ( Level.NetMode != NM_DedicatedServer )
+	{
+		SmokeTrail = Spawn(class'RocketTrailSmoke', self);
+		Corona = Spawn(class'RocketCorona', self);
+	}
 }
 
 simulated function ProcessTouch (Actor Other, Vector HitLocation)
@@ -138,17 +170,20 @@ simulated function Explode(vector HitLocation, vector HitNormal)
 
 simulated function SpawnEffects(vector HitLocation, vector HitNormal)
 {
+    local CSLinkNukeSphere Sphere;
+
     PlaySound(sound'CSLinkNuke.YEAAAHHHnukeMedQuality',,2.5*TransientSoundVolume);
     if(EffectIsRelevant(HitLocation, false))
     {
+        // No rotation passed: the sphere randomizes its own in PostBeginPlay.
         if(Instigator != None && Instigator.GetTeamNum() == 1)
-        {
-            Spawn(class'CSLinkNuke.CSLinkNukeSphereBlue',,, HitLocation, rotator(vect(0,0,1)));
-        }
+            Sphere = Spawn(class'CSLinkNuke.CSLinkNukeSphereBlue',,, HitLocation);
         else
-        {
-            Spawn(class'CSLinkNuke.CSLinkNukeSphere',,, HitLocation, rotator(vect(0,0,1)));
-        }
+            Sphere = Spawn(class'CSLinkNuke.CSLinkNukeSphere',,, HitLocation);
+
+        // Sphere peaks at ScaleInterp.Mid (1.0), so this makes its peak radius == DamageRadius.
+        if(Sphere != None)
+            Sphere.SetDrawScale3D(vect(1,1,1) * (DamageRadius / Sphere.MeshRadius));
     }
 }
 
@@ -256,126 +291,151 @@ function ApplyMomentum(vector HitLocation, float Radius, float Momentum)
 }
 */
 
+// Damage rules, evaluated fresh for every victim:
+//  - friendly pawns/vehicles/turrets and friendly cores/nodes are skipped entirely
+//  - enemy vehicles take 10x damage and momentum
+//  - enemy power cores take CoreDamage
+//  - enemy, non-neutral power nodes take NodeDamage (and are remembered in HurtNode)
+//  - everything else takes DamageAmount / Momentum
+// Mild distance falloff on damage and momentum: full at the victim's collision edge,
+// down to (1 - DamageFalloff) at DamageRadius. DriverRadiusDamage gets the unscaled
+// amount because it applies its own distance falloff to the driver.
 simulated function TeamHurtRadius( float DamageAmount, float DamageRadius, class<DamageType> DamageType, float Momentum, vector HitLocation )
 {
-	local actor Victims;
-	local float damageScale, dist;
-	local vector dir;
-    local float appliedMomentum;
-    local float appliedDamage;
+	local Actor Victims;
+	local Vehicle V;
+	local ONSPowerCore Core;
+	local vector Dir;
+	local float AppliedDamage, AppliedMomentum, Dist, DamageScale, FalloffPerUnit;
+	local byte InstTeam;
+	local bool bTeamCheck;
 
 	if ( bHurtEntry )
 		return;
 
 	bHurtEntry = true;
-    appliedMomentum = momentum;
-    appliedDamage = DamageAmount;
+	FalloffPerUnit = DamageFalloff / DamageRadius;
+	bTeamCheck = (Instigator != None);
+	if ( bTeamCheck )
+		InstTeam = Instigator.GetTeamNum();
 
-	foreach VisibleCollidingActors( class 'Actor', Victims, DamageRadius, HitLocation )
+	foreach VisibleCollidingActors( class'Actor', Victims, DamageRadius, HitLocation )
 	{
-        if(Pawn(Victims) != None && Instigator != None)
-        {
-            if(Pawn(Victims).GetTeamNum() == Instigator.GetTeamNum())
-            {
-                appliedDamage = 0;
-                appliedMomentum = 0;
-            }
-            else if(Vehicle(Victims) != none)
-            {
-                appliedMomentum = momentum *10.0;
-                appliedDamage = DamageAmount *10.0;
-            }
-        }
-        if(ONSPowerCore(Victims) != None && Instigator != None)
-        {
-            if(ONSPowerCore(Victims).DefenderTeamIndex != Instigator.GetTeamNum())
-            {
-                appliedDamage = CoreDamage;
-            }
-        }
-        if(ONSPowerNode(Victims) != None && Instigator != None)
-        {
-            //if(ONSPowerNode(Victims).DefenderTeamIndex != Instigator.GetTeamNum() && ONSPowerNode(Victims).Health > 0)
-            if(ONSPowerNode(Victims).DefenderTeamIndex != Instigator.GetTeamNum() && ONSPowerNode(Victims).CoreStage != 4)
-            {
-                appliedDamage = NodeDamage;
-                HurtNode = Victims;
-            }
-        }
+		// don't let blast damage affect fluid - VisibleCollidingActors doesn't really work for them - jag
+		if ( Victims == self || Victims == HurtWall || Victims.Role != ROLE_Authority || FluidSurfaceInfo(Victims) != None )
+			continue;
+		if ( Victims == LastTouched )
+			LastTouched = None;
 
-		// don't let blast damage affect fluid - VisibleCollisingActors doesn't really work for them - jag
-		if( (Victims != self) && (Hurtwall != Victims) && (Victims.Role == ROLE_Authority) && !Victims.IsA('FluidSurfaceInfo') )
+		AppliedDamage = DamageAmount;
+		AppliedMomentum = Momentum;
+		V = Vehicle(Victims);
+		if ( bTeamCheck )
 		{
-			dir = Victims.Location - HitLocation;
-			dist = FMax(1,VSize(dir));
-			dir = dir/dist;
-			damageScale = 1 - FMax(0,(dist - Victims.CollisionRadius)/DamageRadius);
-            //damageScale = damageScale *2.0;
-            damageScale = 1.0;
-			if ( Instigator == None || Instigator.Controller == None )
-				Victims.SetDelayedDamageInstigatorController( InstigatorController );
-			if ( Victims == LastTouched )
-				LastTouched = None;
-			Victims.TakeDamage
-			(
-				damageScale * appliedDamage,
-				Instigator,
-				Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * dir,
-				(damageScale * appliedMomentum * dir),
-				DamageType
-			);
-			if (Vehicle(Victims) != None && Vehicle(Victims).Health > 0)
-				Vehicle(Victims).DriverRadiusDamage(appliedDamage, DamageRadius, InstigatorController, DamageType, appliedMomentum, HitLocation);
-
+			if ( Pawn(Victims) != None )
+			{
+				if ( Pawn(Victims).GetTeamNum() == InstTeam )
+					continue;
+				if ( V != None )
+				{
+					AppliedDamage *= 10.0;
+					AppliedMomentum *= 10.0;
+				}
+			}
+			else
+			{
+				Core = ONSPowerCore(Victims);
+				if ( Core != None )
+				{
+					if ( Core.DefenderTeamIndex == InstTeam )
+						continue;
+					if ( ONSPowerNode(Core) == None )
+						AppliedDamage = CoreDamage;
+					else if ( Core.CoreStage != 4 )
+					{
+						AppliedDamage = NodeDamage;
+						HurtNode = Core;
+					}
+				}
+			}
 		}
-	}
-	if ( (LastTouched != None) && (LastTouched != self) && (LastTouched.Role == ROLE_Authority) && !LastTouched.IsA('FluidSurfaceInfo') )
-	{
-		Victims = LastTouched;
 
-        if(Pawn(Victims) != None && Instigator != None)
-        {
-            if(Pawn(Victims).GetTeamNum() == Instigator.GetTeamNum())
-            {
-                appliedDamage = 0;
-                appliedMomentum = 0;
-            }
-        }
-        if(ONSPowerCore(Victims) != None && Instigator != None)
-        {
-            if(ONSPowerCore(Victims).DefenderTeamIndex != Instigator.GetTeamNum())
-            {
-                appliedDamage = CoreDamage;
-            }
-        }
-        if(ONSPowerNode(Victims) != None && Instigator != None)
-        {
-            //if(ONSPowerNode(Victims).DefenderTeamIndex != Instigator.GetTeamNum() && ONSPowerNode(Victims).Health > 0)
-            if(ONSPowerNode(Victims).DefenderTeamIndex != Instigator.GetTeamNum() && ONSPowerNode(Victims).CoreStage != 4)
-            {
-                appliedDamage = NodeDamage;
-                HurtNode = Victims;
-            }
-        }
-
-		LastTouched = None;
-		dir = Victims.Location - HitLocation;
-		dist = FMax(1,VSize(dir));
-		dir = dir/dist;
-		//damageScale = FMax(Victims.CollisionRadius/(Victims.CollisionRadius + Victims.CollisionHeight),1 - FMax(0,(dist - Victims.CollisionRadius)/DamageRadius));
-        damageScale = 1.0;
+		Dir = Victims.Location - HitLocation;
+		Dist = FMax(1, VSize(Dir));
+		Dir /= Dist;
+		DamageScale = 1.0 - FalloffPerUnit * FMax(0, Dist - Victims.CollisionRadius);
 		if ( Instigator == None || Instigator.Controller == None )
-			Victims.SetDelayedDamageInstigatorController(InstigatorController);
+			Victims.SetDelayedDamageInstigatorController( InstigatorController );
 		Victims.TakeDamage
 		(
-			damageScale * appliedDamage,
+			DamageScale * AppliedDamage,
 			Instigator,
-			Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * dir,
-			(damageScale * appliedMomentum * dir),
+			Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * Dir,
+			(DamageScale * AppliedMomentum) * Dir,
 			DamageType
 		);
-		if (Vehicle(Victims) != None && Vehicle(Victims).Health > 0)
-			Vehicle(Victims).DriverRadiusDamage(appliedDamage, DamageRadius, InstigatorController, DamageType, appliedMomentum, HitLocation);
+		if ( V != None && V.Health > 0 )
+			V.DriverRadiusDamage(AppliedDamage, DamageRadius, InstigatorController, DamageType, AppliedMomentum, HitLocation);
+	}
+
+	// Touched actor that the visibility scan missed: same rules as above
+	// (Victims = None marks a friendly to skip).
+	Victims = LastTouched;
+	LastTouched = None;
+	if ( Victims != None && Victims != self && Victims.Role == ROLE_Authority && FluidSurfaceInfo(Victims) == None )
+	{
+		AppliedDamage = DamageAmount;
+		AppliedMomentum = Momentum;
+		V = Vehicle(Victims);
+		if ( bTeamCheck )
+		{
+			if ( Pawn(Victims) != None )
+			{
+				if ( Pawn(Victims).GetTeamNum() == InstTeam )
+					Victims = None;
+				else if ( V != None )
+				{
+					AppliedDamage *= 10.0;
+					AppliedMomentum *= 10.0;
+				}
+			}
+			else
+			{
+				Core = ONSPowerCore(Victims);
+				if ( Core != None )
+				{
+					if ( Core.DefenderTeamIndex == InstTeam )
+						Victims = None;
+					else if ( ONSPowerNode(Core) == None )
+						AppliedDamage = CoreDamage;
+					else if ( Core.CoreStage != 4 )
+					{
+						AppliedDamage = NodeDamage;
+						HurtNode = Core;
+					}
+				}
+			}
+		}
+
+		if ( Victims != None )
+		{
+			Dir = Victims.Location - HitLocation;
+			Dist = FMax(1, VSize(Dir));
+			Dir /= Dist;
+			DamageScale = 1.0 - FalloffPerUnit * FMax(0, Dist - Victims.CollisionRadius);
+			if ( Instigator == None || Instigator.Controller == None )
+				Victims.SetDelayedDamageInstigatorController( InstigatorController );
+			Victims.TakeDamage
+			(
+				DamageScale * AppliedDamage,
+				Instigator,
+				Victims.Location - 0.5 * (Victims.CollisionHeight + Victims.CollisionRadius) * Dir,
+				(DamageScale * AppliedMomentum) * Dir,
+				DamageType
+			);
+			if ( V != None && V.Health > 0 )
+				V.DriverRadiusDamage(AppliedDamage, DamageRadius, InstigatorController, DamageType, AppliedMomentum, HitLocation);
+		}
 	}
 
 	bHurtEntry = false;
@@ -470,6 +530,7 @@ defaultproperties
      Damage=300.000000
      CoreDamage=6000
      NodeDamage=5000
+     DamageFalloff=0.300000
      DamageRadius=1750.000000
      //MomentumTransfer=200000.000000
      MomentumTransfer=1000000.000000
@@ -505,4 +566,5 @@ defaultproperties
      ForceType=FT_DragAlong
      ForceRadius=100.000000
      ForceScale=5.000000
+	 bUseCylinderCollision=False
 }

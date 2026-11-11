@@ -2,18 +2,44 @@ class CSLinkNukeFire extends ProjectileFire;
 
 //#exec AUDIO IMPORT FILE=Sounds\ohyeahhats.wav
 
-function projectile SpawnProjectile(Vector Start, Rotator Dir)
+function Projectile SpawnProjectile(Vector Start, Rotator Dir)
 {
-    local Projectile p;
-    
-    if( ProjectileClass != None )
-        p = Weapon.Spawn(ProjectileClass,Owner,, Start, Dir);
+    local Projectile P;
 
-    if( p == None )
+    if (ProjectileClass != None)
+        P = Weapon.Spawn(ProjectileClass, Owner,, Start, Dir);
+
+    if (P == None && Instigator != None)
+        P = Weapon.Spawn(ProjectileClass, Owner,, Instigator.Location, Dir);
+
+    if (P == None)
+    {
+        Weapon.Spawn(class'SmallRedeemerExplosion');
+
+        // Replace the stock Redeemer-sized fallback with this:
+        if (Instigator != None)
+        {
+            Weapon.HurtRadius
+            (
+                ProjectileClass.default.Damage,
+                ProjectileClass.default.DamageRadius,
+                ProjectileClass.default.MyDamageType,
+                ProjectileClass.default.MomentumTransfer,
+                Instigator.Location
+            );
+        }
+
+		CSLinkNuke(Weapon).HealFallbackRadius
+		(
+			ProjectileClass.default.DamageRadius,
+			Instigator.Location
+		);
+
         return None;
+    }
 
-    p.Damage *= DamageAtten;
-    return p;
+    P.Damage *= DamageAtten;
+    return P;
 }
 
 defaultproperties
