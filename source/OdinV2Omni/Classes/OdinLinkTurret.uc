@@ -205,6 +205,18 @@ function Projectile SpawnProjectile(class<Projectile> ProjClass, bool bAltFire)
 		return P2;
 }
 
+/**
+Gunner's client: drop the predicted beam hum right away, CeaseFire() does the same
+on the server for either fire mode. Also reached via ClientKDriverLeave() on exit/death.
+*/
+simulated function ClientStopFire(Controller C, bool bWasAltFire)
+{
+	if (Role < ROLE_Authority)
+		AmbientSound = None;
+
+	Super.ClientStopFire(C, bWasAltFire);
+}
+
 simulated event OwnerEffects()
 {
 	if (!bIsRepeatingFF) 	{
@@ -215,7 +227,14 @@ simulated event OwnerEffects()
 	}
 	ShakeView();
 
-	if (Role < ROLE_Authority && !bIsAltFire) 	{
+	if (Role < ROLE_Authority) 	{
+		// The beam hum is the server's AmbientSound, which only reaches the gunner after a
+		// round trip plus the gun's next net update, so start it here like AltFire() does.
+		if (bIsAltFire) {
+			AmbientSound = AltFireSoundClass;
+			return;
+		}
+		AmbientSound = None; // primary fire ends the beam, as in InstantFireMode.Fire()
 		FireCountdown = FireInterval;
 		AimLockReleaseTime = Level.TimeSeconds + FireCountdown * FireIntervalAimLock;
 		FlashMuzzleFlash();
@@ -551,6 +570,7 @@ state InstantFireMode
 		//{
 		  //Log("Odin-ProjectileFire");
 			bIsFiringBeam = False;
+			AmbientSound = None; // beam hum would otherwise keep playing until a fire button is released
 			if (Team < TeamProjectileClasses.Length && TeamProjectileClasses[Team] != None)
 				SpawnProjectile(TeamProjectileClasses[Team], False);
 			else
@@ -560,12 +580,12 @@ state InstantFireMode
 	function AltFire(Controller C)
 	{
 		//Log("Odin-InstantFire-AltFire");
+		// Only when the hum starts (also after CeaseFire() cleared it): replicate now instead of
+		// at the gun's next net update (NetUpdateFrequency 10 while manned, up to 0.1s late).
+		if (AmbientSound != AltFireSoundClass)
+			NetUpdateTime = Level.TimeSeconds - 1;
 		AmbientSound = AltFireSoundClass;
-    bIsFiringBeam = True;
-
-		// NetUpdateTime = Level.TimeSeconds - 1;
-		// Why was this messing with NetUpdateTime?!
-		// Doesn't seem to change anything and not seen it in other weapons.
+		bIsFiringBeam = True;
 	}
 
 	function WeaponCeaseFire(Controller C, bool bWasAltFire)

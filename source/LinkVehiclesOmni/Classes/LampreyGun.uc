@@ -67,22 +67,49 @@ simulated function PostNetBeginPlay()
 
 simulated function ClientStopFire(Controller C, bool bWasAltFire)
 {
+	local Pawn D;
 
 	Super.ClientStopfire(C,bWasAltFire);
 	if(!bWasAltFire)
 	{
 		bIsFiring=False;
+		// Drop the predicted beam hum right away, as WeaponCeaseFire() does on the server.
+		if (Role < ROLE_Authority && Vehicle(Instigator) != None)
+		{
+			D = Vehicle(Instigator).Driver;
+			if (D != None)
+			{
+				D.AmbientSound = None;
+				D.SoundVolume = Instigator.Default.SoundVolume;
+			}
+		}
 	}
 
 }
 
 simulated function ClientStartFire(Controller C, bool bWasAltFire)
 {
+	local Pawn D;
 
 	Super.ClientStartfire(C,bWasAltFire);
 	if(!bWasAltFire)
 	{
 		bIsFiring=true;
+		// The beam hum is the driver pawn's AmbientSound, set by the server's Tick. The driver pawn
+		// only replicates 5 times a second while driving (Pawn.UnPossessed()), so the server's copy
+		// arrives up to 0.2s plus a round trip late. Start it here, the same way the server does.
+		if (Role < ROLE_Authority && Vehicle(Instigator) != None)
+		{
+			D = Vehicle(Instigator).Driver;
+			if (D != None)
+			{
+				if (MyLamprey != None)
+					D.AmbientSound = BeamSounds[Clamp(MyLamprey.Links, 0, 3)];
+				else
+					D.AmbientSound = BeamSounds[0];
+				D.SoundVolume = LinkVolume;
+			}
+		}
 	}
 
 }
@@ -151,6 +178,7 @@ simulated function tick(float dt)
 		local LampreyBeamEffect LB;
 		local DestroyableObjective HealObjective;
 		local Vehicle LinkedVehicle;
+		local Pawn D;
 
 	//Warning: LampreyGun ONS-Dria-Randomizer-V22.LampreyGun (Function LinkVehiclesOmni.LampreyGun.InstantFireMode.Tick:0672) Accessed None 'LockedPawn'
 		Super.Tick(dt);
@@ -369,8 +397,14 @@ simulated function tick(float dt)
 					BeamLeft.Links = MyLamprey.Links;
 					if(Vehicle(Instigator) != None)
 					{
-						Vehicle(Instigator).Driver.AmbientSound = BeamSounds[Min(Beam.Links,3)];//changes
-						Vehicle(Instigator).Driver.SoundVolume = SentLinkVolume;//changes
+						D = Vehicle(Instigator).Driver;
+						// Driver pawn replicates only 5 times a second while driving, so send hum changes now.
+						if (D.AmbientSound != BeamSounds[Min(Beam.Links,3)])
+						{
+							D.AmbientSound = BeamSounds[Min(Beam.Links,3)];//changes
+							D.NetUpdateTime = Level.TimeSeconds - 1;
+						}
+						D.SoundVolume = SentLinkVolume;//changes
 					}
 					Beam.LinkedPawn = LockedPawn;
 					Beam.bHitSomething = (Other != None);
@@ -655,8 +689,10 @@ function WeaponCeaseFire(Controller C, bool bWasAltFire)
 	if(!bWasAltFire)
 	{
 		bIsFiring = false;
-		if(Vehicle(Instigator) != None)
+		if(Vehicle(Instigator) != None && Vehicle(Instigator).Driver != None)
 		{
+			if (Vehicle(Instigator).Driver.AmbientSound != None)
+				Vehicle(Instigator).Driver.NetUpdateTime = Level.TimeSeconds - 1; // send the hum stop now
 			Vehicle(Instigator).Driver.AmbientSound = None;//changes
 			Vehicle(Instigator).Driver.SoundVolume = Instigator.Default.SoundVolume;//changes
 		}
