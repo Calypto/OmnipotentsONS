@@ -121,23 +121,21 @@ defaultproperties
      HealthMax=700.000000
      Health=700
      Begin Object Class=KarmaParamsRBFull Name=KarmaParamsRBFull5
-         KInertiaTensor(0)=1.300000
-         KInertiaTensor(3)=4.000000
-         KInertiaTensor(5)=4.500000
-         KLinearDamping=0.150000
-         KAngularDamping=0.000000
+         KInertiaTensor(0)=1.000000
+         KInertiaTensor(3)=3.000000
+         KInertiaTensor(5)=3.500000
+         KLinearDamping=0.050000
+         KAngularDamping=0.050000
          KStartEnabled=True
+         bKNonSphericalInertia=True
          bHighDetailOnly=False
          bClientOnly=False
          bKDoubleTickRate=True
-         bKStayUpright=True
-         bKAllowRotate=True
          bDestroyOnWorldPenetrate=True
          bDoSafetime=True
          KFriction=0.500000
-         KImpactThreshold=700.000000
-         KCOMOffset=(X=0.0,Y=0.0,Z=-1.35)        
-         bKNonSphericalInertia=True
+         KImpactThreshold=500.000000
+         KCOMOffset=(X=0.0,Y=0.0,Z=-0.9)
      End Object
      KParams=KarmaParamsRBFull'CSBadgerFix.KarmaParamsRBFull5'
 

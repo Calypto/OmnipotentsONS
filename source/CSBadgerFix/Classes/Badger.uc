@@ -133,7 +133,7 @@ defaultproperties
      WheelLongSlip=0.001000
      WheelLatSlipFunc=(Points=(,(InVal=30.000000,OutVal=0.009000),(InVal=45.000000),(InVal=10000000000.000000)))
      WheelLongFrictionScale=2.500000
-     WheelLatFrictionScale=2.700000
+     WheelLatFrictionScale=1.900000
      WheelHandbrakeSlip=0.010000
      WheelHandbrakeFriction=0.100000
      WheelSuspensionTravel=6.200000
@@ -149,14 +149,14 @@ defaultproperties
      GearRatios(2)=0.900000
      GearRatios(3)=1.100000
      GearRatios(4)=1.400000
-     TransRatio=0.190000
+     TransRatio=0.150000
      ChangeUpPoint=2000.000000
      ChangeDownPoint=1000.000000
      LSDFactor=1.000000
      EngineBrakeFactor=0.000100
      EngineBrakeRPMScale=0.100000
      MaxBrakeTorque=17.000000
-     SteerSpeed=90.000000
+     SteerSpeed=75.000000
      TurnDamping=35.000000
      StopThreshold=100.000000
      HandbrakeThresh=120.000000
@@ -200,7 +200,7 @@ defaultproperties
      DestructionLinearMomentum=(Min=250000.000000,Max=400000.000000)
      DestructionAngularMomentum=(Min=100.000000,Max=150.000000)
      DamagedEffectScale=1.200000
-     DamagedEffectOffset=(X=55.000000,Y=-10.000000,Z=60.000000)
+     DamagedEffectOffset=(X=55.000000,Y=-10.000000,Z=15.000000)
      ImpactDamageMult=0.000500
      //HeadlightCoronaOffset(0)=(X=81.000000,Y=-15.000000,Z=58.000000)
      //HeadlightCoronaOffset(1)=(X=81.000000,Y=15.000000,Z=58.000000)
@@ -209,7 +209,7 @@ defaultproperties
      HeadlightCoronaMaterial=Texture'EpicParticles.Flares.FlashFlare1'
      HeadlightCoronaMaxSize=90.000000
      HeadlightProjectorMaterial=Texture'VMVehicles-TX.NEWprvGroup.PRVprojector'
-     HeadlightProjectorOffset=(X=130.000000,Z=15.000000)
+     HeadlightProjectorOffset=(X=130.000000,Z=-30.000000)
      HeadlightProjectorRotation=(Pitch=-1000)
      HeadlightProjectorScale=0.650000
      Begin Object Class=SVehicleWheel Name=RRWheel
@@ -217,8 +217,8 @@ defaultproperties
          bHandbrakeWheel=True
          BoneName="RightRearTIRe"
          BoneRollAxis=AXIS_Y
-         BoneOffset=(X=-20.000000)
-         WheelRadius=26.000000
+         BoneOffset=(X=-18.000000)
+         WheelRadius=28.000000
          SupportBoneName="RightRearSTRUT"
      End Object
      Wheels(0)=SVehicleWheel'CSBadgerFix.Badger.RRWheel'
@@ -228,8 +228,8 @@ defaultproperties
          bHandbrakeWheel=True
          BoneName="LeftRearTIRE"
          BoneRollAxis=AXIS_Y
-         BoneOffset=(X=-20.000000)
-         WheelRadius=26.000000
+         BoneOffset=(X=-18.000000)
+         WheelRadius=28.000000
          SupportBoneName="LeftRearSTRUT"
      End Object
      Wheels(1)=SVehicleWheel'CSBadgerFix.Badger.LRWheel'
@@ -239,8 +239,8 @@ defaultproperties
          SteerType=VST_Steered
          BoneName="RightFrontTIRE"
          BoneRollAxis=AXIS_Y
-         BoneOffset=(X=20.000000)
-         WheelRadius=26.000000
+         BoneOffset=(X=18.000000)
+         WheelRadius=28.000000
          SupportBoneName="RightFrontSTRUT"
      End Object
      Wheels(2)=SVehicleWheel'CSBadgerFix.Badger.RFWheel'
@@ -250,13 +250,13 @@ defaultproperties
          SteerType=VST_Steered
          BoneName="LeftFrontTIRE"
          BoneRollAxis=AXIS_Y
-         BoneOffset=(X=20.000000)
-         WheelRadius=26.000000
+         BoneOffset=(X=18.000000)
+         WheelRadius=28.000000
          SupportBoneName="LeftFrontSTRUT"
      End Object
      Wheels(3)=SVehicleWheel'CSBadgerFix.Badger.LFWheel'
 
-     VehicleMass=6.200000
+     VehicleMass=5.000000
      bCanDoTrickJumps=True
      bHasHandbrake=True
      bDriverHoldsFlag=False
@@ -265,9 +265,9 @@ defaultproperties
      ExitPositions(1)=(X=-180.000000,Y=-100.000000,Z=100.000000)
      ExitPositions(2)=(X=-180.000000,Y=100.000000,Z=100.000000)
      EntryRadius=180.000000
-     FPCamPos=(X=-20.000000,Z=160.000000)
+     FPCamPos=(X=-20.000000,Z=115.000000)
      TPCamDistance=365.000000
-     TPCamLookat=(X=0.000000)
+     TPCamLookat=(X=0.000000,Y=0.000000,Z=55.000000)
      TPCamWorldOffset=(Z=100.000000)
      MomentumMult=2.000000
      DriverDamageMult=0.000000
@@ -287,6 +287,7 @@ defaultproperties
      Mesh=SkeletalMesh'CSBadgerFix.BadgerChassis'
      SoundVolume=250
      CollisionRadius=175.000000
+     // Badger_Ani_Fixed has Origin.Z=45 (actor origin 45uu higher in the hull); KCOMOffset Z=-0.9 (45/50 KU) restores the original COM
      Begin Object Class=KarmaParamsRBFull Name=KParams0
          KInertiaTensor(0)=1.000000
          KInertiaTensor(3)=3.000000
@@ -302,7 +303,7 @@ defaultproperties
          bDoSafetime=True
          KFriction=0.500000
          KImpactThreshold=500.000000
-         KCOMOffset=(X=0.0,Y=0.0,Z=-1.35)
+         KCOMOffset=(X=0.0,Y=0.0,Z=-0.9)
      End Object
      KParams=KarmaParamsRBFull'CSBadgerFix.Badger.KParams0'
 

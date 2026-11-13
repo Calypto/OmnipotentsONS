@@ -180,7 +180,9 @@ defaultproperties
      AltFireProjSpread=100
      SpreadStyle=SS_Random
      AltFireSpreadStyle=SS_Random
+     WeaponFireOffset=0.000000
      RotationsPerSecond=0.300000
+     bDoOffsetTrace=True
      RedSkin=Texture'MoreBadgers.BioBadger.BioBadgerRed'
      BlueSkin=Texture'MoreBadgers.BioBadger.BioBadgerBlue'
      FireInterval=0.850000

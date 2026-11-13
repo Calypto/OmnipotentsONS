@@ -39,6 +39,8 @@ defaultproperties
      PitchBone="TurretBarrel"
      PitchUpLimit=6000
      WeaponFireAttachmentBone="TurretFire"
+     WeaponFireOffset=0.000000
+     bDoOffsetTrace=True
      RedSkin=Texture'MoreBadgers.FireBadger.FireBadgerRed'
      BlueSkin=Texture'MoreBadgers.FireBadger.FireBadgerBlue'
      ProjectileClass=Class'CSBadgerFix.NapalmBadgerFire'

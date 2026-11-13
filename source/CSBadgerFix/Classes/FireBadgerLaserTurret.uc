@@ -21,6 +21,8 @@ defaultproperties
      PitchUpLimit=8000
      PitchDownLimit=62500
      WeaponFireAttachmentBone="MinigunFire"
+     WeaponFireOffset=0.000000
+     DualFireOffset=0.000000
      RedSkin=Texture'MoreBadgers.FireBadger.FireBadgerRed'
      BlueSkin=Texture'MoreBadgers.FireBadger.FireBadgerBlue'
      AltFireInterval=0.100000

@@ -33,24 +33,22 @@ simulated function UpdatePrecacheMaterials()
     Super.UpdatePrecacheMaterials();
 }
 
+// Trace from the vehicle (Base): native line checks skip the source actor and its owner chain,
+// so the beam passes through its own hull. A passenger gun's own owner chain (gun -> weapon pawn
+// -> controller) doesn't include the vehicle. Attached drivers have no collision.
 function TraceFire(Vector Start, Rotator Dir)
 {
     local Vector X, End, HitLocation, HitNormal;
-    local Actor Other;
+    local Actor Other, Tracer;
     local int Damage;
 
     X = Vector(Dir);
     End = Start + TraceRange * X;
 
-    //skip past vehicle driver
-    if (ONSVehicle(Instigator) != None && ONSVehicle(Instigator).Driver != None)
-    {
-      	ONSVehicle(Instigator).Driver.bBlockZeroExtentTraces = False;
-       	Other = Trace(HitLocation, HitNormal, End, Start, True);
-       	ONSVehicle(Instigator).Driver.bBlockZeroExtentTraces = true;
-    }
-    else
-       	Other = Trace(HitLocation, HitNormal, End, Start, True);
+    Tracer = Base;
+    if (Tracer == None)
+        Tracer = self;
+    Other = Tracer.Trace(HitLocation, HitNormal, End, Start, True);
 
     if (Other != None)
     {
@@ -70,6 +68,31 @@ function TraceFire(Vector Start, Rotator Dir)
     HitCount++;
     LastHitLocation = HitLocation;
     SpawnHitEffects(Other, HitLocation, HitNormal);
+}
+
+// Stock CanAttack traces from the gun, so bots saw their own hull as a teammate in the way
+function bool CanAttack(Actor Other)
+{
+    local vector HitLocation, HitNormal;
+    local Actor HitActor, Tracer;
+
+    if (Instigator == None || Instigator.Controller == None)
+        return false;
+
+    if (VSize(Instigator.Location - Other.Location) > MaxRange())
+        return false;
+
+    if (!Instigator.Controller.LineOfSightTo(Other))
+        return false;
+
+    CalcWeaponFire();
+    Tracer = Base;
+    if (Tracer == None)
+        Tracer = self;
+    HitActor = Tracer.Trace(HitLocation, HitNormal, Other.Location + Other.CollisionHeight * vect(0,0,0.8), WeaponFireLocation, true);
+
+    return (HitActor == None || HitActor == Other || Pawn(HitActor) == None
+        || Pawn(HitActor).Controller == None || !Instigator.Controller.SameTeamAs(Pawn(HitActor).Controller));
 }
 
 state InstantFireMode

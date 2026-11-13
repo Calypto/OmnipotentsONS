@@ -19,6 +19,7 @@ var float DamageFactor;
 simulated function SetFireRateModifier(float Modifier)
 {
 	DamageFactor = Modifier;
+	AltFireInterval = default.AltFireInterval / Modifier;
 }
 
 simulated function Tick(float DeltaTime)
@@ -106,15 +107,32 @@ simulated function DestroyEffects()
 		AmbientEffectEmitter = None;
 	}
 }
-simulated function ClientStartFire(Controller C, bool bAltFire)
+// Alt fire has no muzzle effect and must not switch on the flamethrower's ambient emitter
+simulated event OwnerEffects()
 {
-	if (!bAltFire)
-		Super.ClientStartFire(C, bAltFire);
+	if (!bIsAltFire)
+	{
+		Super.OwnerEffects();
+		return;
+	}
+
+	ClientPlayForceFeedback(AltFireForce);
+
+	if (Role < ROLE_Authority)
+	{
+		FireCountdown = AltFireInterval;
+		AimLockReleaseTime = Level.TimeSeconds + FireCountdown * FireIntervalAimLock;
+	}
 }
 
 state ProjectileFireMode
 {
-	ignores AltFire;
+	// Fire Badger's alt fire. Spawned directly: SpawnProjectile's FlashMuzzleFlash would bump FlashCount,
+	// which natively turns the flamethrower's ambient emitter on for other clients.
+	function AltFire(Controller C)
+	{
+		Spawn(AltFireProjectileClass, self,, WeaponFireLocation, WeaponFireRotation);
+	}
 
 	function Fire(Controller C)
 	{
@@ -146,6 +164,9 @@ defaultproperties
      RedSkin=Shader'Badgers_V2beta3.Skins.FlameBadgerRed'
      BlueSkin=Shader'Badgers_V2beta3.Skins.FlameBadgerBlue'
      FireInterval=0.100000
+     AltFireInterval=0.100000
+     AltFireForce="minifireb"
+     AltFireProjectileClass=Class'CSBadgerFix.BadgerFlameProjectile'
      AmbientEffectEmitterClass=Class'Badgers_V2beta3.FlameBadgerFlamethrowerEmitter'
      FireSoundClass=Sound'Badgers_V2beta3.FlamethrowerLoop'
      AmbientSoundScaling=2.000000

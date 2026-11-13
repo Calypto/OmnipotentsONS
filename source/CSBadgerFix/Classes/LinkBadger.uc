@@ -455,6 +455,7 @@ defaultproperties
 
      RedSkin=Texture'MoreBadgers.LinkBadger.LinkBadgerRed'
      BlueSkin=Texture'MoreBadgers.LinkBadger.LinkBadgerBlue'
+     GearRatios(4)=1.300000
      Begin Object Class=SVehicleWheel Name=SVehicleWheel32
          bPoweredWheel=True
          bHandbrakeWheel=True
@@ -518,7 +519,7 @@ defaultproperties
          bDoSafetime=True
          KFriction=0.500000
          KImpactThreshold=500.000000
-         KCOMOffset=(X=0.0,Y=0.0,Z=-1.35)
+         KCOMOffset=(X=0.0,Y=0.0,Z=-0.9)
      End Object
      KParams=KarmaParamsRBFull'CSBadgerFix.KarmaParamsRBFull8'
 
