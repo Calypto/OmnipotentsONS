@@ -190,6 +190,11 @@ simulated function Tick(float dt)
             }
         }
 
+        // The beam carries its own hum, so it starts and stops with the beam on every client at no
+        // extra replication cost. (It used to sit on the driver pawn, which only net-updates 5x/sec in a vehicle.)
+        if ( Level.NetMode != NM_DedicatedServer )
+            AmbientSound = class'LinkFire'.default.BeamSounds[Min(Links,3)];
+
         OldLinks		= Links;
         OldLinkColor	= LinkColor;
 		OldMuzFlash		= MuzFlash;
@@ -295,6 +300,9 @@ simulated function bool CheckMaxEffectDistance(PlayerController P, vector SpawnL
 
 defaultproperties
 {
+     AmbientSound=Sound'WeaponSounds.LinkGun.BLinkGunBeam1'
+     SoundVolume=240
+     SoundRadius=160.000000
      Skins(0)=FinalBlend'XEffectMat.Link.LinkBeamGreenFB'
      mSizeRange(0)=13.000000
 }

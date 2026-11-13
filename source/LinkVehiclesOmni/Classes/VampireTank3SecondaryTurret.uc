@@ -21,8 +21,6 @@ var(LinkBeam) class<DamageType> AltDamageType;
 var(LinkBeam) int AltDamage;
 var(LinkBeam) String MakeLinkForce;
 var(LinkBeam) float LinkFlexibility;
-var(LinkBeam) byte	LinkVolume;
-var(LinkBeam) Sound BeamSounds[4];
 var(LinkBeam) float VehicleDamageMult;
 var(LinkBeam) float LinkMultiplierCap;
 
@@ -48,11 +46,9 @@ var		bool bDoHit;
 var		bool bFeedbackDeath;
 var		bool bLinkFeedbackPlaying;
 var		bool bStartFire;
-var byte	SentLinkVolume;
 
 var rotator DesiredAimError, CurrentAimError;
-
-var Sound OldAmbientSound;
+
 var bool bBeaming;							// True if utilizing alt-fire
 
 // ============================================================================
@@ -236,10 +232,6 @@ function WeaponCeaseFire(Controller C, bool bWasAltFire)
 			//VampireTank3(Owner).Beam = None;
 			bBeaming = false;
 		}
-		AmbientSound = None;
-		//Owner.AmbientSound = OldAmbientSound;
-		OldAmbientSound = None;
-		//Owner.SoundVolume = ONSVehicle(Owner).Default.SoundVolume;
 		SetLinkTo(None);
 
 		// Can't link if there's no beam
@@ -502,18 +494,8 @@ simulated event Tick(float dt)
 			else
 					Beam.LinkColor = 0;
 			
-			Beam.Links = NumLinks;
-			if (OldAmbientSound == None)
-			{
-				OldAmbientSound = Owner.AmbientSound;
-				AmbientSound = BeamSounds[Min(Beam.Links,3)];
-			}
-			//AmbientSound = BeamSounds[Min(Beam.Links,3)];
-			//if (LinkTank != None)
+			Beam.Links = NumLinks;	// the beam effect plays its own hum from this
 			bBeaming = true;
-			Soundvolume = FireSoundVolume;
-			//Owner.SoundPitch = Owner.Default.SoundPitch;
-			//Owner.SoundVolume = SentLinkVolume;
 			Beam.LinkedPawn = LockedPawn;
 			Beam.bHitSomething = (Other != None);
 			Beam.EndEffect = EndEffect;
@@ -754,11 +736,6 @@ defaultproperties
      AltDamage=13
      MakeLinkForce="LinkActivated"
      LinkFlexibility=0.550000
-     LinkVolume=240
-     BeamSounds(0)=Sound'WeaponSounds.LinkGun.BLinkGunBeam1'
-     BeamSounds(1)=Sound'WeaponSounds.LinkGun.BLinkGunBeam2'
-     BeamSounds(2)=Sound'WeaponSounds.LinkGun.BLinkGunBeam3'
-     BeamSounds(3)=Sound'WeaponSounds.LinkGun.BLinkGunBeam4'
      VehicleDamageMult=1.50000
      LinkMultiplier = 0.00000 // No Link Stacking. 12/2024 pooty.
      LinkMultiplierCap = 3.0

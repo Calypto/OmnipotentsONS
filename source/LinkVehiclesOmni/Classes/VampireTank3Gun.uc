@@ -35,13 +35,10 @@ var()	bool bFeedbackDeath;
 var		bool bInitAimError;
 var		bool bLinkFeedbackPlaying;
 var		bool bStartFire;
-var byte	LinkVolume;
-var byte	SentLinkVolume;
 
 var rotator DesiredAimError, CurrentAimError;
 var class<DamageType>   AltDamageType;
-
-var Sound BeamSounds[4];
+
 
 
 var float MinAim;
@@ -407,11 +404,6 @@ state InstantFireMode
 				if ( (Beam == None) && bIsFiring )
 				{
 					Beam = Spawn( BeamEffectClass, Instigator );
-					// vary link volume to make sure it gets replicated (in case owning player changed it client side)
-					if ( SentLinkVolume == Default.LinkVolume )
-						SentLinkVolume = Default.LinkVolume + 1;
-					else
-						SentLinkVolume = Default.LinkVolume;
 				}
 
 				if ( Beam != None )
@@ -440,11 +432,6 @@ state InstantFireMode
 					}
 
 					Beam.Links = MyVampireTank.Links;
-					if(Vehicle(Instigator) != None)
-					{
-						Vehicle(Instigator).Driver.AmbientSound = BeamSounds[Min(Beam.Links,3)];//changes
-						Vehicle(Instigator).Driver.SoundVolume = SentLinkVolume;//changes
-					}
 					Beam.LinkedPawn = LockedPawn;
 					Beam.bHitSomething = (Other != None);
 					Beam.EndEffect = EndEffect;
@@ -744,11 +731,6 @@ function WeaponCeaseFire(Controller C, bool bWasAltFire)
 	if(!bWasAltFire)
 	{
 		bIsFiring = false;
-		if(Vehicle(Instigator) != None)
-		{
-			Vehicle(Instigator).Driver.AmbientSound = None;//changes
-			Vehicle(Instigator).Driver.SoundVolume = Instigator.Default.SoundVolume;//changes
-		}
 	    if (Beam != None)
 	    {
 	        Beam.Destroy();
@@ -833,11 +815,6 @@ defaultproperties
      Momentum=-25000
      LinkFlexibility=0.5500000
      bInitAimError=True
-     LinkVolume=240
-     BeamSounds(0)=Sound'WeaponSounds.LinkGun.BLinkGunBeam1'
-     BeamSounds(1)=Sound'WeaponSounds.LinkGun.BLinkGunBeam2'
-     BeamSounds(2)=Sound'WeaponSounds.LinkGun.BLinkGunBeam3'
-     BeamSounds(3)=Sound'WeaponSounds.LinkGun.BLinkGunBeam4'
      YawBone="Object02"
      PitchBone="Object02"
      PitchUpLimit=12000

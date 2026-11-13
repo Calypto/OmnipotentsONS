@@ -177,6 +177,11 @@ simulated function Tick(float dt)
             }
         }
 
+        // The beam carries its own hum, so it starts and stops with the beam on every client at no
+        // extra replication cost. (It used to sit on the turret gun with its SoundVolume set to 256, which wraps to 0 in a byte.)
+        if ( Level.NetMode != NM_DedicatedServer )
+            AmbientSound = class'LinkFire'.default.BeamSounds[Min(Links,3)];
+
         OldLinks		= Links;
         OldLinkColor	= LinkColor;
 		OldMuzFlash		= MuzFlash;
@@ -274,6 +279,9 @@ simulated function Tick(float dt)
 
 defaultproperties
 {
+     AmbientSound=Sound'WeaponSounds.LinkGun.BLinkGunBeam1'
+     SoundVolume=240
+     SoundRadius=160.000000
      Skins(0)=FinalBlend'LinkScorpion3Tex.LinkBeamPurpleFB'
      
      mMaxParticles=6
