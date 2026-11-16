@@ -36,6 +36,7 @@ var float               mRollUpdateTime;
 var Proj_FighterChaff Decoy;
 var() config int NumChaff;
 var bool bEnhancedHud;
+var localized string GunnerLabel, PassengerLabel;
 var float EnhancedHudRange;
 
 replication
@@ -556,8 +557,81 @@ simulated function DrawHUD(Canvas Canvas)
 
 	PC = PlayerController(Controller);
 
+	if ( PC.myHUD != None )
+		DrawCrewHUD(Canvas, PC.myHUD);
+
     if(bEnhancedHud)
         DrawVehicleHUD( Canvas, PC );
+}
+
+// Cicada-style crew readout on the right edge: gunner slot on top, passenger slot below.
+// Client-side WeaponPawns order follows replication order, so seats are identified by class, not index.
+// Fonts come from the player's HUD instance (as the Cicada does): Engine.HUD's own defaults are all DefaultFont.
+simulated function DrawCrewHUD(Canvas C, HUD H)
+{
+	local int i;
+	local float XL, YL, LabelYL, PosY;
+	local string GunnerName, PassengerName;
+	local PlayerReplicationInfo PRI;
+	local Font NameFont, LabelFont;
+
+	for ( i=0; i<WeaponPawns.Length; i++ )
+	{
+		if ( WeaponPawns[i] == None )
+			continue;
+		PRI = WeaponPawns[i].PlayerReplicationInfo;
+		if ( PRI == None )
+			continue;
+		if ( WeaponPawn_PredatorPawn(WeaponPawns[i]) != None )
+			GunnerName = PRI.PlayerName;
+		else
+			PassengerName = PRI.PlayerName;
+	}
+	if ( GunnerName == "" && PassengerName == "" )
+		return;
+
+	NameFont = H.GetMediumFontFor(C);
+	LabelFont = H.GetConsoleFont(C);
+	C.Style = ERenderStyle.STY_Alpha;
+
+	C.Font = LabelFont;
+	C.StrLen(GunnerLabel, XL, LabelYL);
+	PosY = C.ClipY * 0.7;
+
+	if ( GunnerName != "" )
+	{
+		C.SetPos(C.ClipX - XL - 5, PosY - 5 - LabelYL);
+		C.SetDrawColor(160,160,160,255);
+		C.DrawText(GunnerLabel);
+
+		C.Font = NameFont;
+		C.StrLen(GunnerName, XL, YL);
+		C.SetPos(C.ClipX - XL - 5, PosY);
+		C.SetDrawColor(255,255,255,255);
+		C.DrawText(GunnerName);
+	}
+	else
+	{
+		C.Font = NameFont;
+		C.StrLen("X", XL, YL);
+	}
+
+	if ( PassengerName != "" )
+	{
+		PosY += YL + 10 + LabelYL;
+
+		C.Font = LabelFont;
+		C.StrLen(PassengerLabel, XL, LabelYL);
+		C.SetPos(C.ClipX - XL - 5, PosY - 5 - LabelYL);
+		C.SetDrawColor(160,160,160,255);
+		C.DrawText(PassengerLabel);
+
+		C.Font = NameFont;
+		C.StrLen(PassengerName, XL, YL);
+		C.SetPos(C.ClipX - XL - 5, PosY);
+		C.SetDrawColor(255,255,255,255);
+		C.DrawText(PassengerName);
+	}
 }
 
 simulated function DrawVehicleHUD( Canvas C, PlayerController PC )
@@ -628,9 +702,22 @@ exec function NextItem()
 function Vehicle FindEntryVehicle(Pawn P)
 {
 	local Bot B, S;
+	local Vehicle V;
+	local int i;
 
 	B = Bot(P.Controller);
-	if ( (B == None) || !IsVehicleEmpty() || (WeaponPawns[0].Driver != None) )
+	if ( B == None )
+	{
+		V = Super.FindEntryVehicle(P);
+		// Pilot seat taken and a free seat is in range: fill passenger seats in order (gunner first)
+		// instead of the stock "closest seat" pick, which favours the passenger's larger entry sphere.
+		if ( (V != None) && (Driver != None) )
+			for ( i=0; i<WeaponPawns.Length; i++ )
+				if ( WeaponPawns[i].Driver == None )
+					return WeaponPawns[i];
+		return V;
+	}
+	if ( !IsVehicleEmpty() || (WeaponPawns[0].Driver != None) )
 		return Super.FindEntryVehicle(P);
 
 	for ( S=B.Squad.SquadMembers; S!=None; S=S.NextSquadMember )
@@ -810,6 +897,8 @@ defaultproperties
      DriverDamageMult=0.000000
      VehiclePositionString="in a Predator"
      VehicleNameString="Predator 1.92"
+     GunnerLabel="Gunner"
+     PassengerLabel="Passenger"
      RanOverDamageType=Class'Onslaught.DamTypeAttackCraftRoadkill'
      CrushedDamageType=Class'Onslaught.DamTypeAttackCraftPancake'
      FlagBone="PredatorGunTurret"

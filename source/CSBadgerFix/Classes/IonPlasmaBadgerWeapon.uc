@@ -14,6 +14,7 @@ function TraceFire(Vector Start, Rotator Dir)
 defaultproperties
 {
      FireImpulse=(X=-150000.000000)
+     BeamEffectClass=Class'CSBadgerFix.IonPlasmaBadgerBeamFire'
      YawBone="BadgerTurret"
      PitchBone="TurretBarrel"
      WeaponFireAttachmentBone="TurretFire"

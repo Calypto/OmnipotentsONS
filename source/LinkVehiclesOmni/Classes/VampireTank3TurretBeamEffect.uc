@@ -6,6 +6,8 @@
 class VampireTank3TurretBeamEffect extends LinkBeamEffect
 	notplaceable;
 
+var byte LitSoundVolume;	// SoundVolume that offsets the engine dimming the hum by LightBrightness/255
+
 // hack
 //var ONSWeapon WeaponOwner;
 
@@ -180,7 +182,11 @@ simulated function Tick(float dt)
         // The beam carries its own hum, so it starts and stops with the beam on every client at no
         // extra replication cost. (It used to sit on the turret gun with its SoundVolume set to 256, which wraps to 0 in a byte.)
         if ( Level.NetMode != NM_DedicatedServer )
+        {
             AmbientSound = class'LinkFire'.default.BeamSounds[Min(Links,3)];
+            // The engine multiplies a lit actor's ambient volume by LightBrightness/255; undo that while lit.
+            LitSoundVolume = Min(255, default.SoundVolume * 255 / LightBrightness);
+        }
 
         OldLinks		= Links;
         OldLinkColor	= LinkColor;
@@ -191,9 +197,13 @@ simulated function Tick(float dt)
     {
 		bDynamicLight = false;
         LightType = LT_None;
+        SoundVolume = default.SoundVolume;
     }
     else if ( bDynamicLight )
+    {
         LightType = LT_Steady;
+        SoundVolume = LitSoundVolume;
+    }
 
     if ( LinkedPawn != None )
     {
@@ -280,7 +290,10 @@ simulated function Tick(float dt)
 defaultproperties
 {
      AmbientSound=Sound'WeaponSounds.LinkGun.BLinkGunBeam1'
-     SoundVolume=240
+     // bFullVolume: like the old driver-pawn hum, ignore the player's Ambient Volume setting (at 0 the engine never starts the sound)
+     bFullVolume=True
+     SoundVolume=122	// matches the old pawn hum: Pawn.AmbientSoundScaling 0.8 * 240/400
+     LitSoundVolume=122
      SoundRadius=160.000000
      Skins(0)=FinalBlend'LinkScorpion3Tex.LinkBeamPurpleFB'
      

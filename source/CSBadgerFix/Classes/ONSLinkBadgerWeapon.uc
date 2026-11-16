@@ -629,4 +629,6 @@ defaultproperties
 
      VehicleHealScore=800
      LinkMultiplier=1.4
+     AltDamageType=Class'CSBadgerFix.DamTypeLinkBadgerBeam'
+     ProjectileClass=Class'CSBadgerFix.ONSLinkBadgerProjectile'
 }

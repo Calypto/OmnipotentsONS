@@ -498,6 +498,22 @@ simulated function EjectVehicle()
     }
 }
 
+// The dropped vehicle's crush/run-over damage is credited to its Instigator, which EjectVehicle sets to this
+// DropShip. Once the pilot leaves, this DropShip has no Controller, so TeamGame.ReduceDamage skips the team check
+// and applies full damage to teammates and to the bailed-out pilot. ONSVehicle.KDriverLeave has just set our
+// Instigator to the pilot's pawn, so pass that on: teammates are covered by the team check, and the pilot is skipped
+// by the Other == Instigator check in Vehicle.RanInto/EncroachingOn.
+function bool KDriverLeave(bool bForceLeave)
+{
+    if (!Super.KDriverLeave(bForceLeave))
+        return false;
+
+    if (spawnVehicle != None && spawnVehicle.Instigator == self)
+        spawnVehicle.Instigator = Instigator;
+
+    return true;
+}
+
 simulated function AttachVehicle()
 {
     local vector SpawnDistance;
