@@ -43,7 +43,7 @@ var		bool bLinkFeedbackPlaying;
 var		bool bStartFire;
 
 var rotator DesiredAimError, CurrentAimError;
-
+
 
 
 var float MinAim;
@@ -582,14 +582,12 @@ simulated function OwnerEffects()
 						Leader.Projectiles[0] = Leader;
 						Leader.Leader = Leader;
 						
-						//Adjust web for TickScale 
-						Leader.SuckTargetSearchRange = Leader.default.SuckTargetSearchRange + ((CurrDrawScale-1)*Leader.default.SuckTargetSearchRange);
-						//log(self@"SuckTargetSearchRange="@Leader.SuckTargetSearchRange@" default="@Leader.default.SuckTargetSearchRange);
-						//increase suck/sticky force
-						// from leader SuckTargets(3)=(SuckTargetClass=Class'Engine.Vehicle',SuckTargetRange=150.000000,SuckTargetForce=6500.000000,SuckReduceVelFactor=0.900000)
-					//	log(self@"SuckTargetRange="@Leader.SuckTargets[3].SuckTargetRange@" default="@Leader.default.SuckTargets[3].SuckTargetRange@"CurrDrawScale="@CurrDrawScale);
-						Leader.SuckTargets[3].SuckTargetForce = Leader.default.SuckTargets[3].SuckTargetForce + ((CurrDrawScale-1)*Leader.default.SuckTargets[3].SuckTargetForce);
-						Leader.SuckTargets[3].SuckReduceVelFactor = Leader.default.SuckTargets[3].SuckReduceVelFactor + ((CurrDrawScale-1)*Leader.default.SuckTargets[3].SuckReduceVelFactor);
+						// Adjust web for Tick size (suck range/force). WebScale replicates so clients predict the same pull.
+						// SuckReduceVelFactor must stay <= 1 and is NOT scaled: above 1 it reverses the projectile's
+						// velocity on entering suck range, deflecting it away from the vehicle.
+						Leader.WebScale = CurrDrawScale;
+						if (CurrDrawScale != 1.0)
+							Leader.ApplyWebScale();
 					}
 					break;
 					

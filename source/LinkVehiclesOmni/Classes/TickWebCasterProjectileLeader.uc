@@ -57,6 +57,7 @@ var	array<TickWebCasterProjectile> Projectiles;
 var	array<TickWebCasterProjectile> Links1;
 var	array<TickWebCasterProjectile> Links2;
 var bool bStuckToAnything;
+var float WebScale; // Firing Tick's size (gun CurrDrawScale); scales suck search range and generic vehicle suck force.
 
 
 //=============================================================================
@@ -66,7 +67,7 @@ var bool bStuckToAnything;
 replication
 {
 	reliable if (bNetInitial && Role == ROLE_Authority)
-		ProjTeam;
+		ProjTeam, WebScale;
 }
 
 
@@ -75,6 +76,22 @@ simulated function PostBeginPlay()
 	Super.PostBeginPlay();
 
 	FireTime = Level.TimeSeconds;
+}
+
+// Clients: initial replicated properties (WebScale) have arrived by now.
+simulated function PostNetBeginPlay()
+{
+	Super.PostNetBeginPlay();
+
+	if (Role < ROLE_Authority && WebScale != 1.0)
+		ApplyWebScale();
+}
+
+// Server: called by the gun after setting WebScale. Clients: from PostNetBeginPlay.
+simulated function ApplyWebScale()
+{
+	SuckTargetSearchRange = default.SuckTargetSearchRange * WebScale;
+	SuckTargets[3].SuckTargetForce = default.SuckTargets[3].SuckTargetForce * WebScale;
 }
 
 
@@ -391,4 +408,5 @@ defaultproperties
      SuckTargets(1)=(bOnlySuckToDriven=True,bSymmetricSuckTarget=True,SuckTargetClass=Class'OnslaughtBP.ONSDualAttackCraft',SuckTargetRange=350.000000,SuckTargetForce=6000.000000,SuckTargetOffset=(X=-96.000000,Y=90.000000,Z=50.000000),SuckReduceVelFactor=0.900000)
      SuckTargets(2)=(bOnlySuckToDriven=True,bSymmetricSuckTarget=True,SuckTargetClass=Class'Onslaught.ONSAttackCraft',SuckTargetRange=300.000000,SuckTargetForce=6500.000000,SuckTargetOffset=(X=-96.000000,Y=25.000000,Z=50.000000),SuckReduceVelFactor=0.900000)
      SuckTargets(3)=(SuckTargetClass=Class'Engine.Vehicle',SuckTargetRange=150.000000,SuckTargetForce=6500.000000,SuckReduceVelFactor=0.900000)
+     WebScale=1.000000
 }
