@@ -12,7 +12,7 @@ function bool CheckReplacement( Actor Other, out byte bSuperRelevant )
 			xWeaponBase(Other).WeaponType = class'OmniPainters.StrikePainterOmni';
 	}
 	else if ( ONSPainterPickup(Other) != None )
-		ReplaceWith( Other, "OmniPainters.StrikePainterPickup");
+		ReplaceWith( Other, "OmniPainters.StrikePainterOmniPickup");
 	else if ( WeaponLocker(Other) != None ) //Who the hell puts the Target Painter in a weapon locker?
 	{
 		L = WeaponLocker(Other);

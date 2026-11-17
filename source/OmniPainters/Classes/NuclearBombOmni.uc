@@ -6,7 +6,8 @@ class NuclearBombOmni extends RedeemerProjectile;
 function TakeDamage( int Damage, Pawn instigatedBy, Vector hitlocation,
 							Vector momentum, class<DamageType> damageType)
 {
-	if ( (Damage > 0) && ((InstigatedBy == None) || (InstigatedBy.Controller == None) || (Instigator == None) || (Instigator.Controller == None) || !InstigatedBy.Controller.SameTeamAs(Instigator.Controller)) )
+	// InstigatorController, not Instigator.Controller: the painter may be dead or in a vehicle by now
+	if ( (Damage > 0) && ((InstigatedBy == None) || (InstigatedBy.Controller == None) || (InstigatorController == None) || !InstigatedBy.Controller.SameTeamAs(InstigatorController)) )
 	{
 		if ( (InstigatedBy == None) || DamageType.Default.bVehicleHit || (DamageType == class'Crushed') )
 			BlowUp(Location);
