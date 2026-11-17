@@ -38,7 +38,7 @@ var		bool bStartFire;
 
 var rotator DesiredAimError, CurrentAimError;
 var class<DamageType>   AltDamageType;
-
+
 
 
 var float MinAim;

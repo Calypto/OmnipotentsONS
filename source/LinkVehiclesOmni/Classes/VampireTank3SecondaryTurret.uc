@@ -432,7 +432,7 @@ simulated event Tick(float dt)
 														 AdjustedDamage = AdjustLinkDamage( NumLinks, Other, AltDamage ) * BeamDamageScale;
 														 Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, MomentumTransfer*X, AltDamageType);
 														 //log(self@"Just before HealDamage to MyVampireTank="@MyVampireTank); 
-														 if (MyVampireTank!=None&&MyVampireTank.Health<MyVampireTank.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)&&!LockedPawn.IsInState('NeutralCore')))
+														 if (MyVampireTank!=None&&MyVampireTank.Health<MyVampireTank.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)))
 						                     MyVampireTank.HealDamage(Round(AdjustedDamage * SelfHealMultiplier), Instigator.Controller, DamageType);
 													}	
 												}

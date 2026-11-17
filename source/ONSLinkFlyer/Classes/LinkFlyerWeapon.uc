@@ -368,7 +368,7 @@ simulated event Tick(float dt)
                                 // LinkFlyer only allows vampire on occupied vehicles or team unlocked ones
                                 //OtherVehicle=Vehicle(Other);
                                 //if (OtherVehicle!=None&&(OtherVehicle.Occupied()||!OtherVehicle.bTeamLocked))
-                                if (LinkFlyer!=None&&LinkFlyer.Health<LinkFlyer.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)&&!LockedPawn.IsInState('NeutralCore')))
+                                if (LinkFlyer!=None&&LinkFlyer.Health<LinkFlyer.HealthMax&&(ONSPowerCore(HealObjective)==None||ONSPowerCore(HealObjective).PoweredBy(Team)))
                                     LinkFlyer.HealDamage(Round(AdjustedDamage * SelfHealMultiplier), Instigator.Controller, AltDamageType);
                                 Other.TakeDamage(AdjustedDamage, Instigator, HitLocation, MomentumTransfer*X, AltDamageType);
                                 }
