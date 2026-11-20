@@ -467,26 +467,22 @@ simulated function EjectVehicle()
 
         VehicleMass = default.VehicleMass;
 
-        if(passengers.length > 0)
+        // Put carried occupants back in their original seats (layout set by AttachVehicle). Skip empty seats:
+        // HasPassenger(None) would match an empty DropShip seat.
+        for(i=0;i<passengers.length;i++)
         {
-            passengerIndex = HasPassenger(passengers[0]);
-            if(passengerIndex >= 0)
-            {
-                WeaponPawns[passengerIndex].KDriverLeave(true);
+            if(passengers[i] == None)
+                continue;
+            passengerIndex = HasPassenger(passengers[i]);
+            if(passengerIndex < 0)
+                continue;
+            WeaponPawns[passengerIndex].KDriverLeave(true);
+            if(i == 0)
                 spawnVehicle.KDriverEnter(passengers[0]);
-            }
-            for(i=1;i<passengers.length;i++)
-            {
-                passengerIndex = HasPassenger(passengers[i]);
-                if(passengerIndex >= 0)
-                {
-                    WeaponPawns[passengerIndex].KDriverLeave(true);
-                    spawnVehicle.WeaponPawns[i-1].KDriverEnter(passengers[i]);
-                }
-            }
-
-            passengers.length=0;
+            else
+                spawnVehicle.WeaponPawns[i-1].KDriverEnter(passengers[i]);
         }
+        passengers.length=0;
 
         //mag effect needs to happen on client only 
         //due to same attachment issue
@@ -520,39 +516,39 @@ simulated function AttachVehicle()
     local rotator YawRot;
     local int x,y;
     local Pawn passenger;
-    local bool detached, found;
-    //local array<Pawn> passengers;
 
     if(NewAttachVehicle != None && Role == ROLE_Authority)
     {
         passengers.length=0;
-        //move vehicle occupiants into passenger seats
-        if(NewAttachVehicle.Occupied())
+        // Move the vehicle's occupants into our passenger seats. Occupied() only checks for a driver (Controller),
+        // so gunners in a driverless vehicle used to stay aboard and die when EjectVehicle destroys it.
+        // Seat layout: passengers[0] = driver, passengers[x+1] = WeaponPawns[x]; empty seats are None. This lets
+        // EjectVehicle put everyone back in the seat they came from.
+        if(NewAttachVehicle.NumPassengers() > 0)
         {
+            passengers.length = NewAttachVehicle.WeaponPawns.length + 1;
+
             passenger = NewAttachVehicle.Driver;
-            if(NewAttachVehicle.KDriverLeave(true))
-                passengers[passengers.length] = passenger;
+            if(passenger != None && NewAttachVehicle.KDriverLeave(true))
+                passengers[0] = passenger;
 
             for (x = 0; x < NewAttachVehicle.WeaponPawns.length; x++)
             {
                 passenger = NewAttachVehicle.WeaponPawns[x].Driver;
-                if(NewAttachVehicle.WeaponPawns[x].KDriverLeave(true))
-                {
-                    passengers[passengers.length] = passenger;
-                }
+                if(passenger != None && NewAttachVehicle.WeaponPawns[x].KDriverLeave(true))
+                    passengers[x + 1] = passenger;
             }
 
+            y = 0;
             for(x=0;x<passengers.length;x++)
             {
-                found = false;
-                for(y=0;y < WeaponPawns.length && !found;y++)
-                {
-                    if(WeaponPawns[y].Driver == None)
-                    {
-                        WeaponPawns[y].KDriverEnter(passengers[x]);
-                        found=true;
-                    }
-                }
+                if(passengers[x] == None)
+                    continue;
+                while(y < WeaponPawns.length && WeaponPawns[y].Driver != None)
+                    y++;
+                if(y == WeaponPawns.length)
+                    break;
+                WeaponPawns[y].KDriverEnter(passengers[x]);
             }
         }
 
